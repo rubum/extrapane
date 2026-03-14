@@ -1,0 +1,21 @@
+/* Scoped selection styles */
+body.panelat-selection-mode {
+  cursor: crosshair !important;
+}
+
+body.panelat-selection-mode .panelat-highlight-hover {
+  outline: 3px solid #00d2ff !important;
+  background-color: rgba(0, 210, 255, 0.2) !important;
+  border-radius: 4px !important;
+  box-shadow: 0 0 15px 5px rgba(0, 210, 255, 0.5) !important;
+  transition: outline 0.15s ease-in-out, background-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out !important;
+  /* Ensure it has a relative position so box-shadow behaves well on inline elements */
+  position: relative !important;
+  z-index: 2147483647 !important; /* Max z-index to stay on top */
+  box-sizing: border-box !important;
+}
+
+body.panelat-selection-mode * {
+  /* Prevent interaction with iframes/embeds while in selection mode to avoid losing focus */
+  pointer-events: auto !important;
+}

@@ -1,0 +1,22 @@
+# macOS
+.DS_Store
+
+# Browsers
+.crx
+
+# IDEs and Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Project specific
+node_modules/
+dist/
+build/
+.env
+
+# Logs and databases
+*.log
+brain/
+.gemini/

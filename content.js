@@ -1,0 +1,160 @@
+/**
+ * content.js
+ * Injected script responsible for visual element selection
+ * and extracting data from the active webpage.
+ */
+
+let isSelectionMode = false;
+let currentHighlightedElement = null;
+
+// Routing for commands from background/sidepanel
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'START_SELECTION') {
+    startSelectionMode();
+  } else if (message.type === 'STOP_SELECTION') {
+    stopSelectionMode();
+  }
+});
+
+/** @returns {boolean} Whether the extension context is still alive */
+function isContextValid() {
+  return !!(chrome.runtime && chrome.runtime.id);
+}
+
+/** Sends a message to the sidepanel with context validation */
+function safeSendMessage(message) {
+  if (isContextValid()) {
+    try {
+      chrome.runtime.sendMessage(message);
+    } catch (e) {
+      console.warn("Extrapane: Connection lost, cleaning up.");
+      stopSelectionMode();
+    }
+  } else {
+    stopSelectionMode();
+  }
+}
+
+/** Activates element highlighting and click capturing */
+function startSelectionMode() {
+  if (isSelectionMode) return;
+  if (!isContextValid()) return;
+  
+  isSelectionMode = true;
+  document.body.classList.add('panelat-selection-mode');
+  
+  document.addEventListener('mouseover', handleMouseOver, true);
+  document.addEventListener('mouseout', handleMouseOut, true);
+  document.addEventListener('click', handleClick, true);
+  document.addEventListener('keydown', handleKeyDown, true);
+}
+
+/** Deactivates all selection features and cleans up UI */
+function stopSelectionMode() {
+  isSelectionMode = false;
+  document.body.classList.remove('panelat-selection-mode');
+  
+  if (currentHighlightedElement) {
+    currentHighlightedElement.classList.remove('panelat-highlight-hover');
+    currentHighlightedElement = null;
+  }
+  
+  document.removeEventListener('mouseover', handleMouseOver, true);
+  document.removeEventListener('mouseout', handleMouseOut, true);
+  document.removeEventListener('click', handleClick, true);
+  document.removeEventListener('keydown', handleKeyDown, true);
+}
+
+function handleKeyDown(e) {
+  if (!isContextValid()) {
+    stopSelectionMode();
+    return;
+  }
+  
+  if (e.key === 'Escape') {
+    stopSelectionMode();
+    safeSendMessage({ type: 'SELECTION_CANCELLED' });
+  }
+}
+
+function handleMouseOver(e) {
+  if (!isSelectionMode) return;
+  if (!isContextValid()) {
+    stopSelectionMode();
+    return;
+  }
+  
+  const path = e.composedPath();
+  const target = path[0];
+  
+  if (!target || target === document.body || target === document.documentElement) return;
+  if (target.closest && target.closest('.panelat-highlight-hover')) return;
+
+  if (currentHighlightedElement && currentHighlightedElement !== target) {
+    currentHighlightedElement.classList.remove('panelat-highlight-hover');
+  }
+
+  currentHighlightedElement = target;
+  currentHighlightedElement.classList.add('panelat-highlight-hover');
+}
+
+function handleMouseOut(e) {
+  if (!isSelectionMode) return;
+  const path = e.composedPath();
+  const target = path[0];
+  
+  if (currentHighlightedElement === target) {
+    currentHighlightedElement.classList.remove('panelat-highlight-hover');
+  }
+}
+
+/** Extracts elements details upon click and sends to sidepanel */
+function handleClick(e) {
+  if (!isSelectionMode) return;
+  if (!isContextValid()) {
+    stopSelectionMode();
+    return;
+  }
+  
+  e.preventDefault();
+  e.stopPropagation();
+
+  const path = e.composedPath();
+  let target = path[0];
+  
+  if (!target) return;
+
+  target.classList.remove('panelat-highlight-hover');
+
+  // Attempt to find meaningful text in target or its immediate parents
+  let textContent = target.innerText || target.textContent || "";
+  textContent = textContent.trim();
+  
+  let attemptParent = target;
+  let maxClimbs = 5;
+  while (!textContent && attemptParent.parentElement && maxClimbs > 0) {
+    attemptParent = attemptParent.parentElement;
+    let fallbackText = attemptParent.innerText || attemptParent.textContent || "";
+    if (fallbackText.trim()) {
+       target = attemptParent;
+       textContent = fallbackText.trim();
+       break;
+    }
+    maxClimbs--;
+  }
+  
+  const extractedData = {
+    tag: target.tagName,
+    text: textContent,
+    html: target.outerHTML,
+    id: target.id,
+    className: typeof target.className === 'string' ? target.className : ''
+  };
+
+  safeSendMessage({
+    type: 'ELEMENT_SELECTED',
+    data: extractedData
+  });
+
+  stopSelectionMode();
+}
