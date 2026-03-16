@@ -112,7 +112,50 @@ function renderTabs() {
       <span class="tab-title">${escapeHtml(tab.title)}</span>
       <span class="close-tab" data-id="${tab.id}">&times;</span>
     `;
-    tabEl.addEventListener('click', () => switchTab(tab.id));
+    
+    const titleSpan = tabEl.querySelector('.tab-title');
+    
+    // Switch tab on click
+    tabEl.addEventListener('click', (e) => {
+      if (!e.target.classList.contains('close-tab') && !tabEl.classList.contains('editing')) {
+        switchTab(tab.id);
+      }
+    });
+
+    // Rename on double click
+    titleSpan.addEventListener('dblclick', (e) => {
+      e.stopPropagation();
+      if (tabEl.classList.contains('editing')) return;
+      
+      tabEl.classList.add('editing');
+      const originalTitle = tab.title;
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'tab-edit-input';
+      input.value = originalTitle;
+      
+      const saveRename = () => {
+        const newTitle = input.value.trim();
+        if (newTitle && newTitle !== originalTitle) {
+          tab.title = newTitle;
+          saveTabsToStorage();
+        }
+        renderTabs();
+      };
+
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') saveRename();
+        if (e.key === 'Escape') renderTabs();
+      });
+
+      input.addEventListener('blur', saveRename);
+      
+      titleSpan.innerHTML = '';
+      titleSpan.appendChild(input);
+      input.focus();
+      input.select();
+    });
+
     tabEl.querySelector('.close-tab').addEventListener('click', (e) => removeTab(tab.id, e));
     elements.tabsList.appendChild(tabEl);
   });

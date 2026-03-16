@@ -16,22 +16,33 @@ STRICT FORMATTING RULE:
 `;
 
 export const CHART_INSTRUCTIONS = `
-DECISION RULE: Use interactive charts ONLY when there is significant numerical data, trends, or comparisons that would benefit from visual representation. 
-Do NOT generate a chart if:
-- The user is asking a basic factual question with no data.
-- The response is purely descriptive or conversational.
-- The data is too simple for a chart (e.g., just one or two values).
+DECISION RULE: Use interactive charts ONLY when there is significant numerical data, trends, or comparisons.
+Aim for **Premium Visuals**: crispy lines, high contrast, and professional analysis.
 
-To generate a chart, use a code block with language 'chart'. The content MUST be valid JSON for Chart.js v4 (type, data, options).
+To generate a chart, use a code block with language 'chart'. The content MUST be valid JSON for Chart.js v4.
+STYLING RULES:
+- **Line Charts**: Use multiple datasets for comparisons. Ensure 'label' and 'data' are precise.
+- **Bar Charts**: Use for comparing distinct categories.
+- **Colors**: Do not specify colors unless critical; the system applies a premium, theme-aware palette automatically.
+- **Options**: 
+  - Always include a descriptive 'plugins.title.text'.
+  - Use 'scales.y.title.text' and 'scales.x.title.text' for clarity.
+  - For line charts, you can specify "tension": 0.4 for smooth curves.
+
 Example:
 \`\`\`chart
 {
-  "type": "bar",
+  "type": "line",
   "data": {
-    "labels": ["A", "B"],
-    "datasets": [{"label": "Data", "data": [10, 20]}]
+    "labels": ["Jan", "Feb", "Mar", "Apr"],
+    "datasets": [
+      { "label": "Revenue", "data": [4500, 5200, 4800, 6100] },
+      { "label": "Expenses", "data": [3800, 4100, 4000, 4200] }
+    ]
   },
-  "options": { "responsive": true }
+  "options": {
+    "plugins": { "title": { "display": true, "text": "Q1 Financial Performance" } }
+  }
 }
 \`\`\`
 `;
@@ -42,33 +53,41 @@ Do NOT use the canvas for short answers, code snippets, or simple explanations.
 
 To trigger the canvas, use a code block with language 'extrapane-canvas'. 
 The first line of the code block MUST be the title of the canvas.
-The rest of the content MUST be a complete, self-contained HTML file (including <style> and <script> tags if needed).
+The rest of the content MUST be a complete, self-contained HTML file.
 
-STYLING RULE: 
-- Tailwind CSS is SUPPORTED and automatically injected into the Canvas. 
-- You SHOULD use Tailwind utility classes for high-quality, professional, and responsive designs.
-- Avoid external CDNs; the Tailwind JIT engine is provided locally.
-- If you need custom CSS that Tailwind doesn't cover, use a <style> tag.
+DESIGN PHILOSOPHY:
+- Aim for **Human-Centric Design**: clean, professional, and sophisticated.
+- Avoid "AI-generated" aesthetics (no neon gradients, excessive rounded corners, or cluttered futuristic layouts).
+- Use professional typography: 
+  - For documents: use 'Inter', 'Roboto', or high-quality serif fonts like 'Georgia'.
+  - Base font size: 11pt-12pt for readability.
+- Use a minimalist color palette with meaningful whitespace.
 
-CRITICAL SECURITY RULE: 
-- DO NOT use external scripts or styles from remote CDNs (no <script src="..."> from other domains).
-- All custom scripts must be provided inside <script> tags within the HTML.
+STYLING RULE:
+- **For Documents (Resumes, Reports, Articles)**: Use **Custom CSS** in a <style> tag. Do NOT use Tailwind CSS for these, as custom CSS provides better control for high-fidelity printing and fixed-width layouts.
+- **For Web Applications (Dashboards, Calculators, Games)**: You MAY use **Tailwind CSS utility classes** (locally bundled and automatically available).
+- Avoid remote CDNs; all custom scripts and styles must be provided inside <script> and <style> tags respectively.
 
-Example:
+Example (Clean Research Report):
 \`\`\`extrapane-canvas
-Tailwind Powered Dashboard
+Executive Summary: Project Phoenix
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Dashboard</title>
+  <style>
+    body { font-family: 'Inter', sans-serif; line-height: 1.6; color: #1a202c; max-width: 800px; margin: 40px auto; padding: 0 20px; }
+    h1 { font-size: 2.25rem; font-weight: 800; border-bottom: 2px solid #edf2f7; padding-bottom: 12px; margin-bottom: 24px; }
+    h2 { font-size: 1.5rem; font-weight: 700; margin-top: 32px; color: #2d3748; }
+    p { margin-bottom: 16px; }
+    .meta { color: #718096; font-size: 0.875rem; margin-bottom: 32px; }
+  </style>
 </head>
-<body class="bg-gray-100 p-8">
-  <div class="max-w-4xl mx-auto bg-white rounded-xl shadow-md overflow-hidden">
-    <div class="p-8">
-      <h1 class="text-2xl font-bold text-indigo-600">Tailwind is Ready!</h1>
-      <p class="mt-2 text-gray-500">You can use all Tailwind utility classes here natively.</p>
-    </div>
-  </div>
+<body>
+  <h1>Executive Summary: Project Phoenix</h1>
+  <div class="meta">Published: March 17, 2026 | Analysis by Extrapane AI</div>
+  <p>This report details the strategic expansion of the Phoenix initiative...</p>
+  <h2>Key Findings</h2>
+  <p>Our research suggests a 15% increase in operational efficiency...</p>
 </body>
 </html>
 \`\`\`

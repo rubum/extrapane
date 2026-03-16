@@ -112,36 +112,110 @@ marked.use({
  */
 export function renderCharts(container) {
   const chartBlocks = container.querySelectorAll('.chart-canvas');
+  const isDark = document.body.classList.contains('dark-theme');
+  
+  // Premium, high-contrast palette
+  const lightColors = ['#6366f1', '#10b981', '#f43f5e', '#f59e0b', '#8b5cf6', '#06b6d4'];
+  const darkColors = ['#818cf8', '#34d399', '#fb7185', '#fbbf24', '#a78bfa', '#22d3ee'];
+  const palette = isDark ? darkColors : lightColors;
+
   chartBlocks.forEach(canvas => {
     if (canvas.getAttribute('data-rendered')) return;
     try {
       const configText = canvas.getAttribute('data-config');
       const config = JSON.parse(configText);
 
-      // Apply theme-aware colors if not specified
+      // 1. Apply Aesthetic Defaults to Datasets
       if (config.data && config.data.datasets) {
         config.data.datasets.forEach((ds, i) => {
-          if (!ds.backgroundColor) {
-            const isDark = document.body.classList.contains('dark-theme');
-            const lightColors = ['#3b82f6', '#0ea5e9', '#0891b2', '#2dd4bf', '#10b981'];
-            const darkColors = ['#60a5fa', '#38bdf8', '#22d3ee', '#2dd4bf', '#34d399'];
-            const palette = isDark ? darkColors : lightColors;
-
-            ds.backgroundColor = palette[i % palette.length] + (isDark ? '60' : '40');
-            ds.borderColor = palette[i % palette.length];
-            ds.borderWidth = 2;
+          const color = palette[i % palette.length];
+          
+          if (!ds.borderColor) ds.borderColor = color;
+          if (!ds.backgroundColor) ds.backgroundColor = color + (isDark ? '33' : '22');
+          
+          // Line smoothing and precision
+          if (config.type === 'line') {
+            ds.tension = ds.tension ?? 0.4;
+            ds.borderWidth = ds.borderWidth ?? 2.5;
+            ds.pointRadius = ds.pointRadius ?? 4;
+            ds.pointHoverRadius = ds.pointHoverRadius ?? 6;
+            ds.pointBackgroundColor = '#fff';
+            ds.pointBorderWidth = 2;
+          }
+          
+          if (config.type === 'bar') {
+            ds.borderRadius = ds.borderRadius ?? 6;
+            ds.borderWidth = 0;
           }
         });
       }
 
-      if (!config.options) config.options = {};
-      config.options.maintainAspectRatio = false;
+      // 2. Premium Global Options
+      const defaultOptions = {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            display: config.data.datasets.length > 1,
+            position: 'top',
+            labels: {
+              usePointStyle: true,
+              boxWidth: 8,
+              font: { family: "'Inter', sans-serif", size: 11, weight: '500' },
+              color: isDark ? '#94a3b8' : '#64748b',
+              padding: 20
+            }
+          },
+          tooltip: {
+            backgroundColor: isDark ? '#1e293b' : '#ffffff',
+            titleColor: isDark ? '#f8fafc' : '#0f172a',
+            bodyColor: isDark ? '#cbd5e1' : '#475569',
+            borderColor: isDark ? '#334155' : '#e2e8f0',
+            borderWidth: 1,
+            padding: 12,
+            cornerRadius: 12,
+            displayColors: true,
+            boxPadding: 4,
+            usePointStyle: true,
+            titleFont: { weight: '700' },
+            shadowBlur: 10,
+            shadowColor: 'rgba(0,0,0,0.1)'
+          }
+        },
+        scales: config.type !== 'pie' && config.type !== 'doughnut' ? {
+          x: {
+            grid: { display: false },
+            ticks: {
+              font: { family: "'Inter', sans-serif", size: 11 },
+              color: isDark ? '#64748b' : '#94a3b8',
+              padding: 10
+            }
+          },
+          y: {
+            grid: {
+              color: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
+              drawBorder: false
+            },
+            ticks: {
+              font: { family: "'Inter', sans-serif", size: 11 },
+              color: isDark ? '#64748b' : '#94a3b8',
+              padding: 10
+            }
+          }
+        } : {}
+      };
+
+      // Merge defaults with AI-provided options
+      config.options = { ...defaultOptions, ...config.options };
+      
+      // Force typography in case AI tried to override it poorly
+      Chart.defaults.font.family = "'Inter', sans-serif";
 
       new Chart(canvas, config);
       canvas.setAttribute('data-rendered', 'true');
     } catch (e) {
       console.error("Failed to render chart:", e);
-      canvas.parentElement.innerHTML = `<div style="color: #ff4757; font-size: 12px; padding: 10px;">Failed to render chart: ${e.message}</div>`;
+      canvas.parentElement.innerHTML = `<div class="error-bubble"><b>Visualization Error:</b> ${e.message}</div>`;
     }
   });
 }

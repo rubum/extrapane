@@ -232,6 +232,24 @@ body {
   color: var(--text-main);
 }
 
+.tab-edit-input {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--accent-primary);
+  color: var(--accent-primary);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 0;
+  margin: 0;
+  width: 100%;
+  outline: none;
+}
+
+.tab-item.editing {
+  cursor: default;
+}
+
 .tab-item.active {
   background: var(--bg-color);
   border-color: var(--border-color);
@@ -1496,17 +1514,23 @@ body {
 
 /* Charts */
 .chart-container {
-  margin: 16px 0;
-  padding: 16px;
-  background: rgba(255, 255, 255, 0.03);
+  margin: 20px 0;
+  padding: 24px;
+  background: var(--surface-color);
   border: 1px solid var(--border-color);
-  border-radius: 16px;
+  border-radius: 20px;
   width: 100%;
-  aspect-ratio: 16 / 9;
+  aspect-ratio: 16 / 10;
   display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
+  box-shadow: var(--shadow-sm);
+  box-sizing: border-box;
+}
+
+.chart-container canvas {
+  image-rendering: -webkit-optimize-contrast;
 }
 
 /* Welcome Card Styles */
