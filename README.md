@@ -13,11 +13,26 @@
 
 **Extrapane AI** is a minimalist, high-performance browser extension designed to bridge the gap between static web content and intelligent analysis. By allowing users to seamlessly extract DOM elements and inject them into a conversational AI context, Extrapane transforms the way you interact with information on the web.
 
+## 🌟 What you can do with Extrapane
+
+Extrapane is more than just a chat window; it's a productivity powerhouse for your browser:
+
+- **📊 Instant Data Visualization**: Extract a table from a financial report or a product page and ask the AI to *"Show me a bar chart comparing the prices"* or *"Graph the revenue growth"*.
+- **📄 Professional Document Generation**: Ask the AI to *"Generate a resume based on my LinkedIn profile"* or *"Draft a formal research paper on this topic"*. View high-fidelity results in the **Canvas** and export them to **PDF or Word**.
+- **🔍 Research Consolidation**: "Chip" multiple elements from different articles into your context. Ask the AI to *"Synthesize a summary of all these sources"* or *"Identify conflicting viewpoints between these authors"*.
+- **📐 Complex Problem Solving**: Capture math formulas or logic problems and see them rendered beautifully via **LaTeX**. Ask the AI to explain the steps 1 by 1.
+- **🗺️ Process Mapping**: Describe a workflow or system and have the AI generate a **Mermaid.js** diagram (flowchart, sequence, etc.) instantly.
+- **📁 Multi-Modal Context**: Upload a PDF manual and a screenshot of an error, then use "Extract Mode" to select the webpage code. Ask the AI: *"Why is this code failing based on these documents?"*.
+
 ## ✨ Key Features
 
 - 🎯 **Precision DOM Extraction**: Enter "Extract Mode" to hover and click elements. Extrapane intelligently captures text and metadata from the page.
 - 💬 **Context-Aware Analytics**: Chat with Google's Gemini models using the captured elements as direct context. No more copy-pasting required.
 - 📑 **Multi-Tab Support**: Manage several chat sessions concurrently with independent history and context.
+- 📁 **File Upload Support**: Upload **PDFs, Images, and Text files** directly to provide rich context for your queries.
+- 🎨 **Extrapane Canvas**: A dedicated, full-screen rendering space for the AI to generate professional resumes, articles, and interactive mini-apps.
+- 📤 **Advanced Exports**: Save your Canvas creations as **PDF, Word (.doc), PNG images, or raw HTML** with a single click.
+- ✨ **Tailwind CSS Support**: Build premium designs using Tailwind utility classes, supported natively and securely without external CDNs.
 - 📊 **Dynamic Visualizations**: Automatically render interactive **Chart.js** visualizations for data trends and comparisons.
 - 🧬 **Mermaid Diagrams**: AI-generated flowcharts, sequence diagrams, and more are rendered instantly.
 - 📐 **LaTeX Support**: Professional math rendering using **KaTeX** for formulas and equations.
@@ -47,6 +62,7 @@ Extrapane is built with performance and maintainability in mind:
 - **Core**: Vanilla JavaScript (ES6+) for maximum speed and zero dependencies in the core logic.
 - **Background Layer**: Handles the orchestration between content scripts and the side panel.
 - **UI Engine**: Custom CSS with CSS variables for dynamic theming and glassmorphism effects.
+- **Styling Framework**: Locally bundled **Tailwind CSS JIT** engine for high-fidelity, CSP-compliant component design.
 - **API Layer**: Robust streaming implementation for Gemini, featuring robust JSON chunk parsing and error recovery.
 
 ## 📦 Dependencies
@@ -73,8 +89,9 @@ Extrapane/
 │   ├── main.js         # Tab management & orchestration
 │   ├── prompts.js      # AI system instructions
 │   └── ui.js           # UI utilities & element references
-├── lib/                # Minimum-dependency library files
-└── icons/              # Brand assets
+├── lib/                # Locally bundled dependencies (Tailwind JIT, etc.)
+│   └── tailwind.min.js
+├── icons/              # Brand assets
 ```
 
 ---

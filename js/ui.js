@@ -21,7 +21,19 @@ export const elements = {
   themeSelect: document.getElementById('themeSelect'),
   hljsStyle: document.getElementById('hljsStyle'),
   tabsList: document.getElementById('tabsList'),
-  newTabBtn: document.getElementById('newTabBtn')
+  newTabBtn: document.getElementById('newTabBtn'),
+  fileInput: document.getElementById('fileInput'),
+  uploadBtn: document.getElementById('uploadBtn'),
+  canvasContainer: document.getElementById('canvasContainer'),
+  canvasFrame: document.getElementById('canvasFrame'),
+  closeCanvasBtn: document.getElementById('closeCanvasBtn'),
+  canvasTitle: document.getElementById('canvasTitle'),
+  downloadBtn: document.getElementById('downloadBtn'),
+  exportMenu: document.getElementById('exportMenu'),
+  exportPdfBtn: document.getElementById('exportPdfBtn'),
+  exportDocBtn: document.getElementById('exportDocBtn'),
+  exportPngBtn: document.getElementById('exportPngBtn'),
+  exportHtmlBtn: document.getElementById('exportHtmlBtn')
 };
 
 /** Switches between light and dark themes. */

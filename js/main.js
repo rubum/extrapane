@@ -220,6 +220,101 @@ elements.chatInput.addEventListener('keydown', (e) => {
 
 elements.newTabBtn.addEventListener('click', createTab);
 elements.extractBtn.addEventListener('click', toggleExtraction);
+elements.uploadBtn.addEventListener('click', () => elements.fileInput.click());
+elements.fileInput.addEventListener('change', handleFileSelect);
+
+async function handleFileSelect(e) {
+  const files = Array.from(e.target.files);
+  if (files.length === 0) return;
+
+  for (const file of files) {
+    try {
+      await processFile(file);
+    } catch (err) {
+      console.error(`Failed to process file ${file.name}:`, err);
+      showToast(`Error processing ${file.name}`);
+    }
+  }
+  // Clear the input so the same file can be selected again
+  elements.fileInput.value = '';
+}
+
+async function processFile(file) {
+  const data = {
+    tag: 'FILE',
+    name: file.name,
+    type: file.type,
+    size: file.size
+  };
+
+  if (file.type.startsWith('image/')) {
+    const base64Data = await fileToBase64(file);
+    const processed = await resizeImage(base64Data);
+    data.base64Images = [{
+      base64: processed.base64,
+      mimeType: processed.mimeType,
+      alt: file.name
+    }];
+  } else if (file.type === 'application/pdf') {
+    const base64Data = await fileToBase64(file);
+    data.base64File = {
+      base64: base64Data.split(',')[1],
+      mimeType: file.type
+    };
+  } else if (file.type.startsWith('text/') || file.name.endsWith('.md') || file.name.endsWith('.js') || file.name.endsWith('.css') || file.name.endsWith('.html')) {
+    const text = await file.text();
+    data.text = text;
+  } else {
+    // Unsupported file type for AI but we'll try to read as text if it's small
+    if (file.size < 1024 * 1024) { // 1MB
+      data.text = await file.text();
+    } else {
+      throw new Error("Unsupported file type or file too large.");
+    }
+  }
+
+  addContext(data);
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function resizeImage(dataUrl) {
+  return new Promise((resolve) => {
+    const maxDim = 1024;
+    const img = new Image();
+    img.onload = () => {
+      let width = img.width;
+      let height = img.height;
+      if (width > maxDim || height > maxDim) {
+        if (width > height) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        } else {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+      const resizedBase64 = canvas.toDataURL('image/jpeg', 0.8);
+      resolve({
+        base64: resizedBase64.split(',')[1],
+        mimeType: 'image/jpeg'
+      });
+    };
+    img.src = dataUrl;
+  });
+}
 
 /** Toggles element selection mode on/off. */
 function toggleExtraction() {
@@ -315,27 +410,31 @@ function renderContextChips() {
   currentTab.contexts.forEach((ctx, index) => {
     const chip = document.createElement('div');
     chip.className = 'context-chip';
+    if (ctx.tag === 'FILE') chip.setAttribute('data-type', 'FILE');
     const text = ctx.text || "";
     const tag = ctx.tag || "ELEMENT";
-    const subtext = ctx.id ? `#${ctx.id}` : (ctx.className ? `.${ctx.className.split(' ')[0]}` : tag);
+    const name = ctx.name || "";
+    const subtext = name ? name : (ctx.id ? `#${ctx.id}` : (ctx.className ? `.${ctx.className.split(' ')[0]}` : tag));
     
     /**
-     * What: Generate a preview body that handles both standard text and image previews.
-     * Why: We want users to see exactly what visual context they have captured, so if base64 
-     *      image data is present, we display an img tag using that data URL.
+     * What: Generate a preview body that handles both standard text, image previews, and file indicators.
      */
-    let textHtml = text ? `<div class="preview-text-part">${escapeHtml(text)}</div>` : '';
-    let imagesHtml = '';
+    let textHtml = text ? `<div class="preview-text-part">${escapeHtml(text.length > 500 ? text.substring(0, 500) + '...' : text)}</div>` : '';
+    let mediaHtml = '';
     
     if (ctx.base64Images && ctx.base64Images.length > 0) {
-      imagesHtml = '<div class="preview-images-container" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:8px;">';
+      mediaHtml = '<div class="preview-images-container" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:8px;">';
       ctx.base64Images.forEach(img => {
-        imagesHtml += `<img src="data:${img.mimeType};base64,${img.base64}" style="max-height: 100px; max-width: 100%; border-radius: 4px; object-fit: contain;" alt="Context Image" />`;
+        mediaHtml += `<img src="data:${img.mimeType};base64,${img.base64}" style="max-height: 100px; max-width: 100%; border-radius: 4px; object-fit: contain;" alt="Context Image" />`;
       });
-      imagesHtml += '</div>';
+      mediaHtml += '</div>';
+    } else if (ctx.base64File) {
+      mediaHtml = `<div class="file-indicator">
+        📄 Attachment: ${escapeHtml(ctx.name)} (${ctx.type})
+      </div>`;
     }
     
-    let previewBodyHtml = `<div class="preview-body">${textHtml}${imagesHtml}</div>`;
+    let previewBodyHtml = `<div class="preview-body">${textHtml}${mediaHtml}</div>`;
 
     chip.innerHTML = `
       <span class="chip-text"><b>${tag}</b> ${subtext}</span>
@@ -365,9 +464,18 @@ elements.contextContainer.addEventListener('click', (e) => {
   }
 });
 
-// Handle actions (copy, edit, retry) via delegation on chat history
+// Handle actions (copy, edit, retry, canvas) via delegation on chat history
 elements.chatHistory.addEventListener('click', (e) => {
   const btn = e.target.closest('button');
+  const canvasCard = e.target.closest('.canvas-trigger-card');
+
+  if (canvasCard) {
+    const title = canvasCard.getAttribute('data-title');
+    const html = canvasCard.getAttribute('data-html');
+    openCanvas(title, html);
+    return;
+  }
+
   if (!btn) return;
 
   const msgContainer = btn.closest('.message');
@@ -435,6 +543,223 @@ elements.chatHistory.addEventListener('click', (e) => {
     }
   }
 });
+
+function unescapeHtml(html) {
+  const txt = document.createElement("textarea");
+  txt.innerHTML = html;
+  return txt.value;
+}
+
+function openCanvas(title, html) {
+  elements.canvasTitle.innerText = title;
+  
+  let content = unescapeHtml(html);
+  
+  /**
+   * What: Injecting local Tailwind CSS JIT engine.
+   * Why: This allows the AI to use Tailwind classes without violating 
+   *      Content Security Policy (CSP), as the script is bundled locally.
+   */
+  const tailwindUrl = chrome.runtime.getURL('lib/tailwind.min.js');
+  const tailwindScript = `<script src="${tailwindUrl}"></script>`;
+  
+  if (content.includes('</head>')) {
+    content = content.replace('</head>', `${tailwindScript}</head>`);
+  } else if (content.includes('<body>')) {
+    content = content.replace('<body>', `<body>${tailwindScript}`);
+  } else {
+    content = tailwindScript + content;
+  }
+
+  elements.canvasFrame.srcdoc = content;
+  elements.canvasContainer.classList.remove('hidden');
+}
+
+function closeCanvas() {
+  elements.canvasContainer.classList.add('hidden');
+  elements.exportMenu.parentElement.classList.remove('show');
+  // Clear srcdoc after animation to free memory
+  setTimeout(() => {
+    elements.canvasFrame.srcdoc = '';
+  }, 500);
+}
+
+function exportPdf() {
+  const html = elements.canvasFrame.srcdoc;
+  const title = elements.canvasTitle.innerText;
+  
+  /**
+   * What: Injecting print-specific styles and a print trigger script.
+   * Why: User requested Times New Roman 12pt and for content to 
+   *      ideally fit on one page. @media print CSS is the standard way 
+   *      to override screen styles for PDF generation.
+   */
+  const printAdditions = `
+    <style>
+      @media print {
+        @page {
+          margin: 15mm;
+          size: portrait;
+        }
+        body {
+          font-family: "Times New Roman", Times, serif !important;
+          font-size: 12pt !important;
+          color: #000 !important;
+          background: #fff !important;
+          line-height: 1.4 !important;
+          margin: 0 !important;
+        }
+        /* Ensure all elements inherit the print font */
+        * {
+          font-family: "Times New Roman", Times, serif !important;
+        }
+        /* Common containers that might restrict height */
+        html, body {
+          height: auto !important;
+          overflow: visible !important;
+        }
+        /* Avoid page breaks inside sections if possible */
+        section, div, p {
+          break-inside: avoid;
+        }
+      }
+    </style>
+    <script>
+      window.onload = () => {
+        setTimeout(() => {
+          window.print();
+        }, 500);
+      };
+    </script>
+  `;
+  
+  let finalHtml = html;
+  if (finalHtml.includes('</head>')) {
+    finalHtml = finalHtml.replace('</head>', `${printAdditions}</head>`);
+  } else if (finalHtml.includes('<body>')) {
+    finalHtml = finalHtml.replace('<body>', `<body>${printAdditions}`);
+  } else {
+    finalHtml = printAdditions + finalHtml;
+  }
+  
+  const blob = new Blob([finalHtml], { type: 'text/html' });
+  const url = URL.createObjectURL(blob);
+  window.open(url, '_blank');
+}
+
+function exportDoc() {
+  const html = elements.canvasFrame.srcdoc;
+  const title = elements.canvasTitle.innerText;
+  
+  // Basic MS Word compatible HTML wrapper
+  const docHtml = `
+    <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+    <head><meta charset='utf-8'><title>${title}</title></head>
+    <body>${html}</body>
+    </html>
+  `;
+  
+  const blob = new Blob([docHtml], { type: 'application/msword' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `${title.replace(/\s+/g, '_')}.doc`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+async function exportPng() {
+  const frame = elements.canvasFrame;
+  const title = elements.canvasTitle.innerText;
+
+  try {
+    showToast("Capturing image...");
+    
+    // We attempt to capture the iframe content via a canvas.
+    // Since it's srcdoc (local), we can access the document.
+    const frameDoc = frame.contentDocument || frame.contentWindow.document;
+    const body = frameDoc.body;
+    
+    // Using a simplified approach: render the HTML to a canvas if possible.
+    // In a real browser extension, we might use chrome.tabs.captureVisibleTab 
+    // but for the sidepanel, we'll try a SVG-based foreignObject capture.
+    
+    const width = body.scrollWidth || 800;
+    const height = body.scrollHeight || 600;
+    
+    const svg = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
+        <foreignObject width="100%" height="100%">
+          <div xmlns="http://www.w3.org/1999/xhtml">
+            ${frameDoc.documentElement.innerHTML}
+          </div>
+        </foreignObject>
+      </svg>
+    `;
+    
+    const img = new Image();
+    const svgBlob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(svgBlob);
+    
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = "white"; // Default background
+      ctx.fillRect(0, 0, width, height);
+      ctx.drawImage(img, 0, 0);
+      
+      const pngUrl = canvas.toDataURL("image/png");
+      const link = document.createElement('a');
+      link.href = pngUrl;
+      link.download = `${title.replace(/\s+/g, '_')}.png`;
+      link.click();
+      URL.revokeObjectURL(url);
+      showToast("Image exported!");
+    };
+    
+    img.onerror = () => {
+      showToast("Manual screenshot recommended for complex apps.");
+      URL.revokeObjectURL(url);
+    };
+    
+    img.src = url;
+  } catch (e) {
+    console.error("PNG export failed:", e);
+    showToast("Failed to capture image.");
+  }
+}
+
+function exportHtml() {
+  const html = elements.canvasFrame.srcdoc;
+  const title = elements.canvasTitle.innerText;
+  const blob = new Blob([html], { type: 'text/html' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `${title.replace(/\s+/g, '_')}.html`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+// Event Listeners for Export Menu
+elements.downloadBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  elements.exportMenu.parentElement.classList.toggle('show');
+});
+
+// Close menu when clicking outside
+document.addEventListener('click', () => {
+  elements.exportMenu.parentElement.classList.remove('show');
+});
+
+elements.exportPdfBtn.addEventListener('click', exportPdf);
+elements.exportDocBtn.addEventListener('click', exportDoc);
+elements.exportPngBtn.addEventListener('click', exportPng);
+elements.exportHtmlBtn.addEventListener('click', exportHtml);
+
+elements.closeCanvasBtn.addEventListener('click', closeCanvas);
 
 // Settings Overlay Management
 elements.settingsBtn.addEventListener('click', () => elements.settingsOverlay.classList.remove('hidden'));
