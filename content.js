@@ -9,6 +9,7 @@ let currentHighlightedElement = null;
 
 // Routing for commands from background/sidepanel
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  console.log("Received message:", message);
   if (message.type === 'START_SELECTION') {
     startSelectionMode();
   } else if (message.type === 'STOP_SELECTION') {
@@ -39,10 +40,10 @@ function safeSendMessage(message) {
 function startSelectionMode() {
   if (isSelectionMode) return;
   if (!isContextValid()) return;
-  
+
   isSelectionMode = true;
   document.body.classList.add('panelat-selection-mode');
-  
+
   document.addEventListener('mouseover', handleMouseOver, true);
   document.addEventListener('mouseout', handleMouseOut, true);
   document.addEventListener('click', handleClick, true);
@@ -53,12 +54,12 @@ function startSelectionMode() {
 function stopSelectionMode() {
   isSelectionMode = false;
   document.body.classList.remove('panelat-selection-mode');
-  
+
   if (currentHighlightedElement) {
     currentHighlightedElement.classList.remove('panelat-highlight-hover');
     currentHighlightedElement = null;
   }
-  
+
   document.removeEventListener('mouseover', handleMouseOver, true);
   document.removeEventListener('mouseout', handleMouseOut, true);
   document.removeEventListener('click', handleClick, true);
@@ -70,7 +71,7 @@ function handleKeyDown(e) {
     stopSelectionMode();
     return;
   }
-  
+
   if (e.key === 'Escape') {
     stopSelectionMode();
     safeSendMessage({ type: 'SELECTION_CANCELLED' });
@@ -83,10 +84,10 @@ function handleMouseOver(e) {
     stopSelectionMode();
     return;
   }
-  
+
   const path = e.composedPath();
   const target = path[0];
-  
+
   if (!target || target === document.body || target === document.documentElement) return;
   if (target.closest && target.closest('.panelat-highlight-hover')) return;
 
@@ -102,7 +103,7 @@ function handleMouseOut(e) {
   if (!isSelectionMode) return;
   const path = e.composedPath();
   const target = path[0];
-  
+
   if (currentHighlightedElement === target) {
     currentHighlightedElement.classList.remove('panelat-highlight-hover');
   }
@@ -110,46 +111,102 @@ function handleMouseOut(e) {
 
 /** Extracts elements details upon click and sends to sidepanel */
 function handleClick(e) {
+  console.log("Handling click to element", e);
   if (!isSelectionMode) return;
   if (!isContextValid()) {
     stopSelectionMode();
     return;
   }
-  
+
   e.preventDefault();
   e.stopPropagation();
 
   const path = e.composedPath();
   let target = path[0];
-  
+
   if (!target) return;
 
   target.classList.remove('panelat-highlight-hover');
 
-  // Attempt to find meaningful text in target or its immediate parents
-  let textContent = target.innerText || target.textContent || "";
-  textContent = textContent.trim();
-  
-  let attemptParent = target;
-  let maxClimbs = 5;
-  while (!textContent && attemptParent.parentElement && maxClimbs > 0) {
-    attemptParent = attemptParent.parentElement;
-    let fallbackText = attemptParent.innerText || attemptParent.textContent || "";
-    if (fallbackText.trim()) {
-       target = attemptParent;
-       textContent = fallbackText.trim();
-       break;
+  let imgTargets = [];
+
+  if (target.tagName && target.tagName.toLowerCase() === 'img') {
+    imgTargets.push(target);
+  } else {
+    // Collect all images within the explicit click target container
+    if (target.querySelectorAll) {
+      const children = Array.from(target.querySelectorAll('img'));
+      if (children.length > 0) {
+        imgTargets.push(...children);
+      }
     }
-    maxClimbs--;
+
+    if (imgTargets.length === 0) {
+      // Check visually under the cursor to bypass transparent overlays 
+      const elementsAtPoint = document.elementsFromPoint(e.clientX, e.clientY);
+      const imgAtPoint = elementsAtPoint.find(el => el.tagName && el.tagName.toLowerCase() === 'img');
+      if (imgAtPoint) imgTargets.push(imgAtPoint);
+    }
+
+    if (imgTargets.length === 0) {
+      // Check if the image is anywhere in the direct click path
+      const imgInPath = path.find(el => el.tagName && el.tagName.toLowerCase() === 'img');
+      if (imgInPath) imgTargets.push(imgInPath);
+    }
   }
-  
-  const extractedData = {
+
+  console.log("Extrapane: Image extraction check -> Click target:", target);
+  console.log("Extrapane: Image extraction check -> Selected imgTargets:", imgTargets);
+
+  let extractedData = {
     tag: target.tagName,
-    text: textContent,
     html: target.outerHTML,
     id: target.id,
     className: typeof target.className === 'string' ? target.className : ''
   };
+
+  if (imgTargets.length > 0) {
+    console.log("we found images", imgTargets);
+    /**
+     * What: Extract multiple image sources and alt texts directly.
+     * Why: Users expect all visual context inside a container to be gathered.
+     */
+    extractedData.images = imgTargets.map(img => {
+      return {
+        src: img.currentSrc || img.src,
+        alt: img.alt || "Image without alt text"
+      };
+    }).filter(imgData => imgData.src); // Clean out empty sources
+
+    // Fallback text if the container had text
+    const parentText = target.innerText?.trim();
+    if (parentText) extractedData.text = parentText;
+  }
+
+  if (!extractedData.text && imgTargets.length === 0) {
+    console.log("we have a text element", target);
+    /**
+     * What: Attempt to find meaningful text in target or climbing up to immediate parents.
+     * Why: Often users might click an SVG, an icon, or an empty wrapper div. We climb up
+     *      to find the nearest root node with text so the context is still useful for the AI.
+     */
+    let textContent = target.innerText || target.textContent || "";
+    textContent = textContent.trim();
+
+    let attemptParent = target;
+    let maxClimbs = 5;
+    while (!textContent && attemptParent.parentElement && maxClimbs > 0) {
+      attemptParent = attemptParent.parentElement;
+      let fallbackText = attemptParent.innerText || attemptParent.textContent || "";
+      if (fallbackText.trim()) {
+        target = attemptParent;
+        textContent = fallbackText.trim();
+        break;
+      }
+      maxClimbs--;
+    }
+    extractedData.text = textContent;
+  }
 
   safeSendMessage({
     type: 'ELEMENT_SELECTED',

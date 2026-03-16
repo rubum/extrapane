@@ -5,26 +5,44 @@
  */
 
 export const state = {
-  selectedContexts: [],   // Array of extracted element data
+  tabs: [],               // Array of { id, title, history, contexts }
+  activeTabId: null,      // Currently selected tab ID
   isExtracting: false,     // Toggles select-to-extract mode
   userApiKey: '',
   userModel: 'gemini-2.0-flash',
-  userTheme: 'light',
-  conversationHistory: [] // Stored Gemini-format messages
+  userTheme: 'light'
 };
 
-/** Syncs current conversation history to local storage. */
-export function saveHistoryToStorage() {
-  chrome.storage.local.set({ chatHistoryData: state.conversationHistory });
+/** Syncs all tabs and context to local storage. */
+export function saveTabsToStorage() {
+  chrome.storage.local.set({ 
+    chatTabsData: state.tabs,
+    activeTabId: state.activeTabId
+  });
 }
 
 /** Loads all settings and history from local storage. */
 export function loadSettings(callback) {
-  chrome.storage.local.get(['geminiApiKey', 'geminiModel', 'userTheme', 'chatHistoryData'], (result) => {
+  chrome.storage.local.get(['geminiApiKey', 'geminiModel', 'userTheme', 'chatTabsData', 'activeTabId'], (result) => {
     if (result.geminiApiKey) state.userApiKey = result.geminiApiKey;
     if (result.geminiModel) state.userModel = result.geminiModel;
     if (result.userTheme) state.userTheme = result.userTheme;
-    if (result.chatHistoryData) state.conversationHistory = result.chatHistoryData;
+    
+    if (result.chatTabsData && result.chatTabsData.length > 0) {
+      state.tabs = result.chatTabsData;
+      state.activeTabId = result.activeTabId || state.tabs[0].id;
+    } else {
+      // Initialize with a default tab if none exist
+      const defaultTab = {
+        id: Date.now().toString(),
+        title: 'New Chat',
+        history: [],
+        contexts: []
+      };
+      state.tabs = [defaultTab];
+      state.activeTabId = defaultTab.id;
+    }
+    
     if (callback) callback(state);
   });
 }
@@ -39,4 +57,9 @@ export function saveSettings(apiKey, model, theme) {
     geminiModel: model,
     userTheme: theme
   });
+}
+
+/** Legacy support or helper to save history (now just saves all tabs) */
+export function saveHistoryToStorage() {
+  saveTabsToStorage();
 }

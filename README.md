@@ -17,7 +17,10 @@
 
 - 🎯 **Precision DOM Extraction**: Enter "Extract Mode" to hover and click elements. Extrapane intelligently captures text and metadata from the page.
 - 💬 **Context-Aware Analytics**: Chat with Google's Gemini models using the captured elements as direct context. No more copy-pasting required.
-- 📊 **Dynamic Visualizations**: If the AI detects numerical trends or comparisons, it can automatically render interactive **Chart.js** visualizations directly in the chat.
+- 📑 **Multi-Tab Support**: Manage several chat sessions concurrently with independent history and context.
+- 📊 **Dynamic Visualizations**: Automatically render interactive **Chart.js** visualizations for data trends and comparisons.
+- 🧬 **Mermaid Diagrams**: AI-generated flowcharts, sequence diagrams, and more are rendered instantly.
+- 📐 **LaTeX Support**: Professional math rendering using **KaTeX** for formulas and equations.
 - 💅 **Premium Interface**: A sleek, glassmorphism-inspired UI with smooth micro-animations, autoscrolling, and full support for Light/Dark themes.
 - 🛠️ **Robust Error Handling**: Specific, user-friendly feedback for API issues, including detailed retry logic for rate-limited (429) requests.
 - 📝 **Message Persistence**: Your conversation history and context chips are automatically saved to local storage, ensuring you never lose your progress.
@@ -51,7 +54,28 @@ Extrapane is built with performance and maintainability in mind:
 - **[Gemini API](https://ai.google.dev/)**: Powering the core intelligence.
 - **[Marked.js](https://marked.js.org/)**: High-performance Markdown rendering.
 - **[Chart.js](https://www.chartjs.org/)**: Interactive data visualization.
+- **[KaTeX](https://katex.org/)**: Fast math typesetting.
+- **[Mermaid.js](https://mermaid.js.org/)**: Diagramming and charting tool.
 - **[Highlight.js](https://highlightjs.org/)**: Beautiful syntax highlighting for code snippets.
+
+## 📂 Project Structure
+
+```text
+Extrapane/
+├── background.js       # Extension service worker
+├── content.js          # DOM extraction & interaction logic
+├── content.css         # Styles for the extraction overlay
+├── manifest.json       # Extension configuration
+├── sidepanel.html      # Main chat interface
+├── sidepanel.css       # Chat UI styling
+├── js/
+│   ├── chat.js         # Chat rendering & markdown logic
+│   ├── main.js         # Tab management & orchestration
+│   ├── prompts.js      # AI system instructions
+│   └── ui.js           # UI utilities & element references
+├── lib/                # Minimum-dependency library files
+└── icons/              # Brand assets
+```
 
 ---
 

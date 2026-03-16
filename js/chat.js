@@ -9,37 +9,80 @@ import { elements, escapeHtml, smartScroll } from './ui.js';
 // Custom Marked Renderer for rich media and code blocks
 const renderer = new marked.Renderer();
 
+// Initialize Mermaid
+mermaid.initialize({
+  startOnLoad: false,
+  theme: document.body.classList.contains('dark-theme') ? 'dark' : 'default',
+  securityLevel: 'loose',
+});
+
 /**
- * Custom code block renderer.
- * Handles 'chart' language for data visualization and standard code blocks with copy buttons.
+ * Handle LaTeX formulas in text.
+ * Replaces $$...$$ with block math and $...$ with inline math using KaTeX.
  */
-renderer.code = function (argsOrCode, language) {
-  let code = typeof argsOrCode === 'string' ? argsOrCode : argsOrCode.text;
-  let lang = typeof argsOrCode === 'string' ? language : argsOrCode.lang;
+function renderMath(text) {
+  if (typeof text !== 'string') return text;
+  
+  let processed = text;
+  // Block math: $$ ... $$
+  processed = processed.replace(/\$\$(.+?)\$\$/gs, (match, formula) => {
+    try {
+      return katex.renderToString(formula, { displayMode: true, throwOnError: false });
+    } catch (e) {
+      return match;
+    }
+  });
+  // Inline math: $ ... $
+  processed = processed.replace(/\$(.+?)\$/g, (match, formula) => {
+    try {
+      return katex.renderToString(formula, { displayMode: false, throwOnError: false });
+    } catch (e) {
+      return match;
+    }
+  });
+  return processed;
+}
 
-  if (lang === 'chart') {
-    return `
-      <div class="chart-container">
-        <canvas class="chart-canvas" data-config="${escapeHtml(code)}"></canvas>
-      </div>
-    `;
+// Configure Marked with modern use() API
+marked.use({
+  breaks: true,
+  gfm: true,
+  renderer: {
+    code(argsOrCode, language) {
+      let code = typeof argsOrCode === 'string' ? argsOrCode : argsOrCode.text;
+      let lang = typeof argsOrCode === 'string' ? language : argsOrCode.lang;
+
+      if (lang === 'chart') {
+        return `
+          <div class="chart-container">
+            <canvas class="chart-canvas" data-config="${escapeHtml(code)}"></canvas>
+          </div>
+        `;
+      }
+
+      if (lang === 'mermaid') {
+        return `
+          <div class="mermaid-container">
+            <pre class="mermaid">${escapeHtml(code)}</pre>
+          </div>
+        `;
+      }
+
+      const validLanguage = lang && hljs.getLanguage(lang) ? lang : 'plaintext';
+      const highlighted = hljs.highlight(code, { language: validLanguage }).value;
+
+      return `
+        <div class="code-block-container">
+          <div class="code-block-header">
+            <span>${validLanguage}</span>
+            <button class="copy-code-btn" data-code="${escapeHtml(code)}">Copy</button>
+          </div>
+          <pre><code class="hljs language-${validLanguage}">${highlighted}</code></pre>
+        </div>
+      `;
+    }
   }
-
-  const validLanguage = lang && hljs.getLanguage(lang) ? lang : 'plaintext';
-  const highlighted = hljs.highlight(code, { language: validLanguage }).value;
-
-  return `
-    <div class="code-block-container">
-      <div class="code-block-header">
-        <span>${validLanguage}</span>
-        <button class="copy-code-btn" data-code="${escapeHtml(code)}">Copy</button>
-      </div>
-      <pre><code class="hljs language-${validLanguage}">${highlighted}</code></pre>
-    </div>
-  `;
-};
-
-marked.setOptions({ renderer });
+});
 
 /**
  * Scans a container for chart canvases and initializes them using Chart.js.
@@ -79,6 +122,23 @@ export function renderCharts(container) {
       canvas.parentElement.innerHTML = `<div style="color: #ff4757; font-size: 12px; padding: 10px;">Failed to render chart: ${e.message}</div>`;
     }
   });
+}
+
+/**
+ * Scans a container for mermaid blocks and initializes them.
+ * @param {HTMLElement} container 
+ */
+export async function renderDiagrams(container) {
+  const mermaidBlocks = container.querySelectorAll('.mermaid');
+  if (mermaidBlocks.length > 0) {
+    try {
+      await mermaid.run({
+        nodes: mermaidBlocks,
+      });
+    } catch (e) {
+      console.error("Failed to render mermaid diagram:", e);
+    }
+  }
 }
 
 /** Displays the initial onboarding/welcome card. */
@@ -173,6 +233,7 @@ export function appendMessage(sender, htmlContent, index) {
 
   if (isAI) {
     renderCharts(container);
+    renderDiagrams(container);
   }
 
   return container;
@@ -208,14 +269,15 @@ export function appendStreamingMessage(index) {
       if (contentDiv.classList.contains('is-thinking')) {
         contentDiv.classList.remove('is-thinking');
       }
-      contentDiv.innerHTML = marked.parse(markdownText);
+      contentDiv.innerHTML = renderMath(marked.parse(markdownText));
       smartScroll();
     },
     finalize: (finalText) => {
       container.classList.remove('streaming');
       contentDiv.classList.remove('is-thinking');
-      contentDiv.innerHTML = marked.parse(finalText);
+      contentDiv.innerHTML = renderMath(marked.parse(finalText));
       renderCharts(contentDiv);
+      renderDiagrams(contentDiv);
       smartScroll();
     }
   };

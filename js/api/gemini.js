@@ -6,12 +6,14 @@
 
 export const geminiProvider = {
   /**
-   * Generates a streaming response from Gemini.
-   * Handles JSON chunk parsing and robust error extraction.
+   * What: Generates a streaming response from the Gemini API using native fetch.
+   * Why: This bypasses the need for a heavy SDK and allows us to manually parse out 
+   *      the stream chunks to drive our UI streaming effect in real-time. It accepts 
+   *      an array of parts (text + inlineData for images).
    */
-  async *streamGenerateContent(apiKey, model, history, prompt) {
+  async *streamGenerateContent(apiKey, model, history, promptParts) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?key=${apiKey}`;
-    const contents = [...history, { role: "user", parts: [{ text: prompt }] }];
+    const contents = [...history, { role: "user", parts: promptParts }];
     
     const response = await fetch(url, {
       method: 'POST',

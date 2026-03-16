@@ -1,22 +1,42 @@
-# macOS
+# OS files
 .DS_Store
+Thumbs.db
+*.icloud
 
-# Browsers
-.crx
+# Build and Dependencies
+node_modules/
+dist/
+build/
+*.pyc
+__pycache__/
 
 # IDEs and Editors
 .vscode/
 .idea/
 *.swp
 *.swo
+*.sublime-project
+*.sublime-workspace
 
-# Project specific
-node_modules/
-dist/
-build/
+# Extension Specific
+*.zip
+*.crx
+*.pem
+
+# Local Config and Secrets
 .env
+.env.local
+.env.*.local
 
 # Logs and databases
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.eslintcache
+
+# AI and Tooling
 brain/
 .gemini/
+/tmp/
+

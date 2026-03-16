@@ -19,7 +19,9 @@ export const elements = {
   apiKeyInput: document.getElementById('apiKey'),
   modelNameSelect: document.getElementById('modelName'),
   themeSelect: document.getElementById('themeSelect'),
-  hljsStyle: document.getElementById('hljsStyle')
+  hljsStyle: document.getElementById('hljsStyle'),
+  tabsList: document.getElementById('tabsList'),
+  newTabBtn: document.getElementById('newTabBtn')
 };
 
 /** Switches between light and dark themes. */
