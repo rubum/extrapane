@@ -263,23 +263,74 @@ elements.chatInput.addEventListener('keydown', (e) => {
 
 elements.newTabBtn.addEventListener('click', createTab);
 elements.extractBtn.addEventListener('click', toggleExtraction);
+elements.extractPdfBtn.addEventListener('click', extractCurrentPagePdf);
 elements.uploadBtn.addEventListener('click', () => elements.fileInput.click());
 elements.fileInput.addEventListener('change', handleFileSelect);
+
+/**
+ * What: Detects if the current tab is a PDF or contains an embedded PDF and extracts it.
+ * Why: Allows users to quickly get PDF context without triggering full element extraction.
+ */
+async function extractCurrentPagePdf() {
+  chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
+    const tab = tabs[0];
+    if (!tab) return;
+
+    const url = tab.url.toLowerCase();
+    
+    // 1. Direct PDF Page or common PDF-serving patterns (like arXiv)
+    const isDirectPdf = url.endsWith('.pdf') || url.includes('.pdf?');
+    const isSpecializedViewer = url.includes('/pdf/') || url.includes('type=pdf') || url.includes('/viewer.html?file=');
+
+    if (isDirectPdf || isSpecializedViewer) {
+      const fileName = url.split('/').pop().split('?')[0] || 'document.pdf';
+      addContext({
+        pdfUrl: tab.url,
+        pdfName: fileName,
+        tag: 'PDF'
+      });
+      return;
+    }
+
+    // 2. Embedded PDF scanning
+    // We send a message to background script to ensure injection and relay to content script
+    chrome.runtime.sendMessage({ type: 'GET_PAGE_PDFS' }, (response) => {
+      if (chrome.runtime.lastError) {
+        showToast("Error: Service worker connection failed.");
+        return;
+      }
+      if (response && response.pdfUrl) {
+        addContext({
+          pdfUrl: response.pdfUrl,
+          pdfName: response.pdfName,
+          tag: 'PDF'
+        });
+      } else {
+        showToast("No embedded PDF found on this page.");
+      }
+    });
+  });
+}
 
 async function handleFileSelect(e) {
   const files = Array.from(e.target.files);
   if (files.length === 0) return;
 
-  for (const file of files) {
-    try {
-      await processFile(file);
-    } catch (err) {
-      console.error(`Failed to process file ${file.name}:`, err);
-      showToast(`Error processing ${file.name}`);
+  setExtractionLoading(true);
+  try {
+    for (const file of files) {
+      try {
+        await processFile(file);
+      } catch (err) {
+        console.error(`Failed to process file ${file.name}:`, err);
+        showToast(`Error processing ${file.name}`);
+      }
     }
+  } finally {
+    setExtractionLoading(false);
+    // Clear the input so the same file can be selected again
+    elements.fileInput.value = '';
   }
-  // Clear the input so the same file can be selected again
-  elements.fileInput.value = '';
 }
 
 async function processFile(file) {
@@ -386,60 +437,89 @@ chrome.runtime.onMessage.addListener((request) => {
   }
 });
 
+function setExtractionLoading(isLoading) {
+  if (elements.extractionLoader) {
+    elements.extractionLoader.classList.toggle('hidden', !isLoading);
+  }
+}
+
 async function addContext(data) {
   const currentTab = getActiveTab();
+  setExtractionLoading(true);
   
-  // If the extracted element contains images, we need to convert them all to base64
-  if (data.images && data.images.length > 0) {
-    data.base64Images = [];
-    for (const imgData of data.images) {
+  try {
+    // Handle Remote PDFs
+    if (data.pdfUrl) {
       try {
-        /**
-         * What: Fetch the image, draw it to a canvas, and encode it as a base64 JPEG.
-         * Why: Chrome extension storage limits and Gemini API requirements mean we need 
-         *      a reliable, size-controlled base64 string.
-         */
-        const maxDim = 1024;
-        const response = await fetch(imgData.src);
+        showToast(`Fetching PDF: ${data.pdfName}...`);
+        const response = await fetch(data.pdfUrl);
         const blob = await response.blob();
-        const bitmap = await createImageBitmap(blob);
+        const base64Data = await fileToBase64(blob);
         
-        let width = bitmap.width;
-        let height = bitmap.height;
-        if (width > maxDim || height > maxDim) {
-          if (width > height) {
-            height = Math.round((height * maxDim) / width);
-            width = maxDim;
-          } else {
-            width = Math.round((width * maxDim) / height);
-            height = maxDim;
-          }
-        }
-
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(bitmap, 0, 0, width, height);
-        
-        const base64DataUrl = canvas.toDataURL('image/jpeg', 0.8);
-        data.base64Images.push({
-          base64: base64DataUrl.split(',')[1],
-          mimeType: 'image/jpeg',
-          alt: imgData.alt
-        });
-      } catch (e) {
-        console.error("Failed to process image:", e);
+        data.base64File = {
+          base64: base64Data.split(',')[1],
+          mimeType: 'application/pdf'
+        };
+        data.name = data.pdfName;
+        data.type = 'application/pdf';
+        data.size = blob.size;
+        data.tag = 'FILE';
+      } catch (err) {
+        console.error("Failed to fetch remote PDF:", err);
+        showToast("Error: Could not fetch PDF URL.");
+        return;
       }
     }
-    
-    // Cleanup the original verbose URLs array if we want to save local storage space, 
-    // but keep it for reference just in case.
-  }
+  
+    // If the extracted element contains images, we need to convert them all to base64
+    if (data.images && data.images.length > 0) {
+      data.base64Images = [];
+      for (const imgData of data.images) {
+        try {
+          const maxDim = 1024;
+          const response = await fetch(imgData.src);
+          const blob = await response.blob();
+          const bitmap = await createImageBitmap(blob);
+          
+          let width = bitmap.width;
+          let height = bitmap.height;
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
 
-  currentTab.contexts.push(data);
-  saveTabsToStorage();
-  renderContextChips();
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(bitmap, 0, 0, width, height);
+          
+          const base64DataUrl = canvas.toDataURL('image/jpeg', 0.8);
+          data.base64Images.push({
+            base64: base64DataUrl.split(',')[1],
+            mimeType: 'image/jpeg',
+            alt: imgData.alt
+          });
+        } catch (e) {
+          console.error("Failed to process image:", e);
+        }
+      }
+    }
+
+    currentTab.contexts.push(data);
+    saveTabsToStorage();
+    renderContextChips();
+  } catch (error) {
+    console.error("Error adding context:", error);
+    showToast("Error processing content.");
+  } finally {
+    setExtractionLoading(false);
+  }
 }
 
 /** 

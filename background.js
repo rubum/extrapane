@@ -11,44 +11,59 @@ chrome.sidePanel
 
 /**
  * Global message listener for extension-wide communication.
- * Handles START_SELECTION and STOP_SELECTION flow.
+ * Handles START_SELECTION, STOP_SELECTION and GET_PAGE_PDFS flows.
  */
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === 'START_SELECTION') {
-    const targetTabId = message.tabId;
+  const tabId = message.tabId || (sender.tab ? sender.tab.id : null);
 
-    /**
-     * Sends selection command to content script, injecting it if necessary.
-     */
-    const sendSelectionMessage = (tabId) => {
-      chrome.tabs.sendMessage(tabId, { type: 'START_SELECTION' }).catch(() => {
-        console.log("Content script not found, injecting now...");
-        chrome.scripting.executeScript({
-          target: { tabId: tabId, allFrames: true },
-          files: ['content.js']
-        }).then(() => {
-          chrome.scripting.insertCSS({
-            target: { tabId: tabId, allFrames: true },
-            files: ['content.css']
-          }).then(() => {
-            chrome.tabs.sendMessage(tabId, { type: 'START_SELECTION' }).catch(err => console.error("Still failed to connect:", err));
-          });
-        }).catch(err => console.error("Failed to inject script: ", err));
-      });
-    };
+  const handleMessage = async () => {
+    if (message.type === 'START_SELECTION') {
+      const activeTabId = tabId || (await getActiveTabId());
+      if (activeTabId) {
+        await ensureContentScript(activeTabId);
+        chrome.tabs.sendMessage(activeTabId, { type: 'START_SELECTION' }).catch(err => console.error("Start failed:", err));
+      }
+    } else if (message.type === 'STOP_SELECTION') {
+      const activeTabId = tabId || (await getActiveTabId());
+      if (activeTabId) {
+        chrome.tabs.sendMessage(activeTabId, { type: 'STOP_SELECTION' }).catch(() => {});
+      }
+    } else if (message.type === 'GET_PAGE_PDFS') {
+      const activeTabId = tabId || (await getActiveTabId());
+      if (activeTabId) {
+        await ensureContentScript(activeTabId);
+        chrome.tabs.sendMessage(activeTabId, { type: 'GET_PAGE_PDFS' }, (response) => {
+          sendResponse(response);
+        });
+        return true; // Keep channel open for async sendResponse
+      }
+    }
+  };
 
-    if (targetTabId) {
-      sendSelectionMessage(targetTabId);
-    } else {
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (tabs.length > 0) {
-          sendSelectionMessage(tabs[0].id);
-        }
-      });
-    }
-  } else if (message.type === 'STOP_SELECTION') {
-    if (message.tabId) {
-      chrome.tabs.sendMessage(message.tabId, { type: 'STOP_SELECTION' }).catch(() => {});
-    }
-  }
+  handleMessage();
+  if (message.type === 'GET_PAGE_PDFS') return true; 
 });
+
+/**
+ * Ensures content.js is injected into the target tab.
+ */
+async function ensureContentScript(tabId) {
+  try {
+    await chrome.tabs.sendMessage(tabId, { type: 'PING' });
+  } catch (err) {
+    console.log("Content script not found, injecting now...");
+    await chrome.scripting.executeScript({
+      target: { tabId: tabId, allFrames: true },
+      files: ['content.js']
+    });
+    await chrome.scripting.insertCSS({
+      target: { tabId: tabId, allFrames: true },
+      files: ['content.css']
+    });
+  }
+}
+
+async function getActiveTabId() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  return tab ? tab.id : null;
+}

@@ -10,11 +10,38 @@ let currentHighlightedElement = null;
 // Routing for commands from background/sidepanel
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log("Received message:", message);
+  if (message.type === 'PING') {
+    sendResponse({ pong: true });
+    return true;
+  }
+
   if (message.type === 'START_SELECTION') {
     startSelectionMode();
   } else if (message.type === 'STOP_SELECTION') {
     stopSelectionMode();
+  } else if (message.type === 'GET_PAGE_PDFS') {
+    const pdfSelector = 'embed[type*="pdf"], iframe[src*=".pdf"], object[type*="pdf"], a[href*=".pdf"], iframe[type="application/pdf"]';
+    let pdfEl = document.querySelector(pdfSelector);
+
+    // Check for Chrome's internal PDF extension wrapper which often uses about:blank or hidden src
+    const hasPdfTemplate = !!document.querySelector('template[shadowrootmode]');
+    const isExtensionViewer = window.location.protocol === 'chrome-extension:' || document.contentType === 'application/pdf';
+
+    if (pdfEl || hasPdfTemplate || isExtensionViewer) {
+      const url = (pdfEl ? (pdfEl.getAttribute('original-url') || pdfEl.src || pdfEl.data || pdfEl.href) : null) || window.location.href;
+
+      // If we found an iframe but it's about:blank, the real URL is the page URL in these viewers
+      const finalUrl = (url === 'about:blank') ? window.location.href : url;
+
+      sendResponse({
+        pdfUrl: finalUrl,
+        pdfName: finalUrl.split('/').pop().split('?')[0] || 'document.pdf'
+      });
+      return;
+    }
+    sendResponse(null);
   }
+  return true; // Keep channel open for async response
 });
 
 /** @returns {boolean} Whether the extension context is still alive */
@@ -183,7 +210,30 @@ function handleClick(e) {
     if (parentText) extractedData.text = parentText;
   }
 
-  if (!extractedData.text && imgTargets.length === 0) {
+  // PDF Detection
+  const pdfSelector = 'embed[type*="pdf"], iframe[src*=".pdf"], object[type*="pdf"], iframe[type="application/pdf"]';
+  let pdfElement = target.matches(pdfSelector) ? target : target.querySelector(pdfSelector);
+  const pdfTemplate = document.querySelector('template[shadowrootmode]');
+
+  if (!pdfElement && !pdfTemplate) {
+    // Check if the current target is an anchor pointing to a PDF
+    if (target.tagName && target.tagName.toLowerCase() === 'a' && target.href?.toLowerCase().endsWith('.pdf')) {
+      pdfElement = target;
+    }
+  }
+
+  if (pdfElement || pdfTemplate) {
+    let pdfUrl = pdfElement ? (pdfElement.getAttribute('original-url') || pdfElement.src || pdfElement.data || pdfElement.href) : window.location.href;
+    if (pdfUrl === 'about:blank') pdfUrl = window.location.href;
+
+    if (pdfUrl) {
+      extractedData.pdfUrl = pdfUrl;
+      extractedData.pdfName = pdfUrl.split('/').pop().split('?')[0] || 'document.pdf';
+      extractedData.tag = 'PDF';
+    }
+  }
+
+  if (!extractedData.text && imgTargets.length === 0 && !extractedData.pdfUrl) {
     console.log("we have a text element", target);
     /**
      * What: Attempt to find meaningful text in target or climbing up to immediate parents.
