@@ -12,7 +12,7 @@ import {
 } from './state.js';
 import { buildPrompt } from './prompts.js';
 import { getAIProvider } from './api.js';
-import { elements, applyTheme, smartScroll, showToast, scrollToBottom, escapeHtml } from './ui.js';
+import { elements, applyTheme, applyThemeColor, smartScroll, showToast, scrollToBottom, escapeHtml } from './ui.js';
 import { 
   appendMessage, 
   appendStreamingMessage, 
@@ -31,6 +31,10 @@ loadSettings((loadedState) => {
   if (loadedState.userTheme) {
     elements.themeSelect.value = loadedState.userTheme;
     applyTheme(loadedState.userTheme);
+  }
+  if (loadedState.userThemeColor) {
+    elements.themeColorInput.value = loadedState.userThemeColor;
+    applyThemeColor(loadedState.userThemeColor);
   }
   
   renderTabs();
@@ -891,9 +895,11 @@ elements.saveSettingsBtn.addEventListener('click', () => {
   saveSettings(
     elements.apiKeyInput.value,
     elements.modelNameSelect.value,
-    elements.themeSelect.value
+    elements.themeSelect.value,
+    elements.themeColorInput.value
   );
   applyTheme(state.userTheme);
+  applyThemeColor(state.userThemeColor);
   elements.settingsOverlay.classList.add('hidden');
   showToast('Settings saved!');
 });

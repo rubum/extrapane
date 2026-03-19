@@ -21,6 +21,7 @@ export const elements = {
   apiKeyInput: document.getElementById('apiKey'),
   modelNameSelect: document.getElementById('modelName'),
   themeSelect: document.getElementById('themeSelect'),
+  themeColorInput: document.getElementById('themeColor'),
   hljsStyle: document.getElementById('hljsStyle'),
   tabsList: document.getElementById('tabsList'),
   newTabBtn: document.getElementById('newTabBtn'),
@@ -47,6 +48,15 @@ export function applyTheme(theme) {
     document.body.classList.remove('dark-theme');
     elements.hljsStyle.href = 'lib/highlight-light.min.css';
   }
+}
+
+/** Applies a dynamic theme color across UI css variables. */
+export function applyThemeColor(colorHex) {
+  const root = document.documentElement;
+  root.style.setProperty('--accent-primary', colorHex);
+  root.style.setProperty('--accent-secondary', colorHex);
+  root.style.setProperty('--accent-accent', colorHex);
+  root.style.setProperty('--gradient-main', `linear-gradient(135deg, ${colorHex}, ${colorHex}dd)`);
 }
 
 /** Instant scroll to the bottom of the chat history. */

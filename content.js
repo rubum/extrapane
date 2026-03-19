@@ -7,6 +7,32 @@
 let isSelectionMode = false;
 let currentHighlightedElement = null;
 
+// Apply theme color dynamically
+function applyContentThemeColor(hex) {
+  if (!hex) return;
+  // Convert hex to rgb
+  const r = parseInt(hex.slice(1, 3), 16) || 0;
+  const g = parseInt(hex.slice(3, 5), 16) || 210;
+  const b = parseInt(hex.slice(5, 7), 16) || 255;
+  
+  const root = document.documentElement;
+  root.style.setProperty('--extrapane-theme-color', hex);
+  root.style.setProperty('--extrapane-theme-bg', `rgba(${r}, ${g}, ${b}, 0.2)`);
+  root.style.setProperty('--extrapane-theme-shadow', `rgba(${r}, ${g}, ${b}, 0.5)`);
+}
+
+chrome.storage.local.get(['userThemeColor'], (res) => {
+  if (res.userThemeColor) {
+    applyContentThemeColor(res.userThemeColor);
+  }
+});
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes.userThemeColor) {
+    applyContentThemeColor(changes.userThemeColor.newValue);
+  }
+});
+
 // Routing for commands from background/sidepanel
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log("Received message:", message);

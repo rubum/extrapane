@@ -10,7 +10,8 @@ export const state = {
   isExtracting: false,     // Toggles select-to-extract mode
   userApiKey: '',
   userModel: 'gemini-2.0-flash',
-  userTheme: 'light'
+  userTheme: 'light',
+  userThemeColor: '#2563eb'
 };
 
 /** Syncs all tabs and context to local storage. */
@@ -23,10 +24,11 @@ export function saveTabsToStorage() {
 
 /** Loads all settings and history from local storage. */
 export function loadSettings(callback) {
-  chrome.storage.local.get(['geminiApiKey', 'geminiModel', 'userTheme', 'chatTabsData', 'activeTabId'], (result) => {
+  chrome.storage.local.get(['geminiApiKey', 'geminiModel', 'userTheme', 'userThemeColor', 'chatTabsData', 'activeTabId'], (result) => {
     if (result.geminiApiKey) state.userApiKey = result.geminiApiKey;
     if (result.geminiModel) state.userModel = result.geminiModel;
     if (result.userTheme) state.userTheme = result.userTheme;
+    if (result.userThemeColor) state.userThemeColor = result.userThemeColor;
     
     if (result.chatTabsData && result.chatTabsData.length > 0) {
       state.tabs = result.chatTabsData;
@@ -48,14 +50,17 @@ export function loadSettings(callback) {
 }
 
 /** Updates local state and persists settings to local storage. */
-export function saveSettings(apiKey, model, theme) {
+export function saveSettings(apiKey, model, theme, themeColor) {
   state.userApiKey = apiKey;
   state.userModel = model;
   state.userTheme = theme;
+  if (themeColor) state.userThemeColor = themeColor;
+  
   chrome.storage.local.set({
     geminiApiKey: apiKey,
     geminiModel: model,
-    userTheme: theme
+    userTheme: theme,
+    userThemeColor: state.userThemeColor
   });
 }
 

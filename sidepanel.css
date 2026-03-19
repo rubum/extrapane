@@ -898,9 +898,47 @@ body {
 
 .input-area {
   display: flex;
-  align-items: flex-end;
-  gap: 12px;
+  flex-direction: column;
+  gap: 8px;
   padding: 10px 14px 12px;
+}
+
+.input-toolbar {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.03);
+}
+
+.dark-theme .input-toolbar {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.input-toolbar .action-btn {
+  width: 32px;
+  height: 32px;
+  background: transparent;
+  border-radius: 8px;
+  opacity: 0.7;
+}
+
+.input-toolbar .action-btn:hover {
+  background: var(--bg-color);
+  opacity: 1;
+  transform: translateY(-1px);
+}
+
+.input-toolbar .action-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.input-main {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  width: 100%;
 }
 
 #chatInput {
@@ -910,8 +948,8 @@ body {
   color: var(--text-main);
   font-family: inherit;
   font-size: 14px;
-  padding: 10px 4px;
-  min-height: 40px;
+  padding: 8px 4px;
+  min-height: 36px;
   max-height: 150px;
   resize: none;
   outline: none;
@@ -960,6 +998,8 @@ body {
 }
 
 .icon-btn {
+  width: 40px;
+  height: 40px;
   background: none;
   border: none;
   color: var(--text-muted);
@@ -984,6 +1024,11 @@ body {
   flex-direction: column;
   transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
   transform: translateX(0);
+}
+
+/* Theme color */
+.theme-color {
+  height: 45px;
 }
 
 /* Canvas Overlay */
@@ -1079,8 +1124,15 @@ body {
 }
 
 @keyframes dropdownAppear {
-  from { opacity: 0; transform: translateY(-10px) scale(0.95); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.95);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .dropdown-content button {
@@ -1121,7 +1173,8 @@ body {
 
 .canvas-view {
   flex-grow: 1;
-  background: #fff; /* Default white for documents/apps */
+  background: #fff;
+  /* Default white for documents/apps */
   position: relative;
   overflow: hidden;
 }
@@ -1697,10 +1750,19 @@ body {
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @keyframes slideDownFade {
-  from { opacity: 0; transform: translateY(-5px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
