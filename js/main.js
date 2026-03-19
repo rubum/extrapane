@@ -603,6 +603,13 @@ elements.chatHistory.addEventListener('click', (e) => {
     return;
   }
 
+  const collapseTrigger = e.target.closest('.collapse-trigger');
+  if (collapseTrigger) {
+    const collapseBox = collapseTrigger.closest('.context-collapse');
+    collapseBox.classList.toggle('open');
+    return;
+  }
+
   if (!btn) return;
 
   const msgContainer = btn.closest('.message');
@@ -688,14 +695,40 @@ function openCanvas(title, html) {
    *      Content Security Policy (CSP), as the script is bundled locally.
    */
   const tailwindUrl = chrome.runtime.getURL('lib/tailwind.min.js');
+  const isDark = document.body.classList.contains('dark-theme');
+  
+  // Base CSS for premium defaults and theme awareness
+  const baseStyle = `
+    <style>
+      :root {
+        --canvas-bg: ${isDark ? '#14141c' : '#ffffff'};
+        --canvas-text: ${isDark ? '#f8f8fa' : '#111827'};
+      }
+      body { 
+        font-family: 'Inter', system-ui, -apple-system, sans-serif; 
+        line-height: 1.6; 
+        color: var(--canvas-text); 
+        background-color: var(--canvas-bg);
+        margin: 0;
+        padding: 24px;
+      }
+      h1, h2, h3, h4 { font-family: 'Outfit', sans-serif; margin-top: 1.5em; margin-bottom: 0.5em; }
+      img { max-width: 100%; height: auto; border-radius: 12px; }
+      table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+      th, td { border: 1px solid ${isDark ? '#2d2d3d' : '#e2e8f0'}; padding: 12px; text-align: left; }
+      th { background-color: ${isDark ? '#1e1e2d' : '#f8fafc'}; }
+    </style>
+  `;
+  
   const tailwindScript = `<script src="${tailwindUrl}"></script>`;
+  const injections = baseStyle + tailwindScript;
   
   if (content.includes('</head>')) {
-    content = content.replace('</head>', `${tailwindScript}</head>`);
+    content = content.replace('</head>', `${injections}</head>`);
   } else if (content.includes('<body>')) {
-    content = content.replace('<body>', `<body>${tailwindScript}`);
+    content = content.replace('<body>', `<body>${injections}`);
   } else {
-    content = tailwindScript + content;
+    content = injections + content;
   }
 
   elements.canvasFrame.srcdoc = content;
@@ -876,9 +909,22 @@ elements.downloadBtn.addEventListener('click', (e) => {
   elements.exportMenu.parentElement.classList.toggle('show');
 });
 
-// Close menu when clicking outside
-document.addEventListener('click', () => {
+function closeAndRevertSettings() {
+  // Revert preview if not saved
+  applyTheme(state.userTheme);
+  applyThemeColor(state.userThemeColor);
+  elements.settingsOverlay.classList.add('hidden');
+}
+
+// Close menu and popovers when clicking outside
+document.addEventListener('click', (e) => {
   elements.exportMenu.parentElement.classList.remove('show');
+  
+  if (!elements.settingsOverlay.classList.contains('hidden') && 
+      !elements.settingsOverlay.contains(e.target) && 
+      !elements.settingsBtn.contains(e.target)) {
+    closeAndRevertSettings();
+  }
 });
 
 elements.exportPdfBtn.addEventListener('click', exportPdf);
@@ -889,8 +935,18 @@ elements.exportHtmlBtn.addEventListener('click', exportHtml);
 elements.closeCanvasBtn.addEventListener('click', closeCanvas);
 
 // Settings Overlay Management
-elements.settingsBtn.addEventListener('click', () => elements.settingsOverlay.classList.remove('hidden'));
-elements.closeSettingsBtn.addEventListener('click', () => elements.settingsOverlay.classList.add('hidden'));
+elements.settingsBtn.addEventListener('click', () => {
+  elements.themeSelect.value = state.userTheme;
+  elements.themeColorInput.value = state.userThemeColor;
+  elements.settingsOverlay.classList.remove('hidden');
+});
+
+elements.closeSettingsBtn.addEventListener('click', closeAndRevertSettings);
+
+// Add real-time preview listeners
+elements.themeSelect.addEventListener('change', (e) => applyTheme(e.target.value));
+elements.themeColorInput.addEventListener('input', (e) => applyThemeColor(e.target.value));
+
 elements.saveSettingsBtn.addEventListener('click', () => {
   saveSettings(
     elements.apiKeyInput.value,

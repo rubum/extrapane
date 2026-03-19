@@ -90,6 +90,20 @@ marked.use({
         `;
       }
 
+      if (lang === 'context') {
+        return `
+          <div class="context-collapse">
+            <button class="collapse-trigger">
+              <span>Used Context</span>
+              <span class="collapse-icon">▼</span>
+            </button>
+            <div class="collapse-content">
+              ${marked.parse(code)}
+            </div>
+          </div>
+        `;
+      }
+
       const validLanguage = lang && hljs.getLanguage(lang) ? lang : 'plaintext';
       const highlighted = hljs.highlight(code, { language: validLanguage }).value;
 
