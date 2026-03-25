@@ -15,7 +15,19 @@ body.panelat-selection-mode .panelat-highlight-hover {
   box-sizing: border-box !important;
 }
 
-body.panelat-selection-mode * {
+body.panelat-selection-mode *,
+body.extrapane-video-picker-mode * {
   /* Prevent interaction with iframes/embeds while in selection mode to avoid losing focus */
   pointer-events: auto !important;
+}
+
+body.extrapane-video-picker-mode {
+  cursor: cell !important;
+}
+
+body.extrapane-video-picker-mode .panelat-highlight-hover {
+  outline: 4px dashed var(--extrapane-theme-color, #fbbf24) !important;
+  background-color: rgba(251, 191, 36, 0.1) !important;
+  box-shadow: 0 0 20px 8px rgba(251, 191, 36, 0.3) !important;
+  z-index: 2147483647 !important;
 }

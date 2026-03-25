@@ -14,7 +14,7 @@ function applyContentThemeColor(hex) {
   const r = parseInt(hex.slice(1, 3), 16) || 0;
   const g = parseInt(hex.slice(3, 5), 16) || 210;
   const b = parseInt(hex.slice(5, 7), 16) || 255;
-  
+
   const root = document.documentElement;
   root.style.setProperty('--extrapane-theme-color', hex);
   root.style.setProperty('--extrapane-theme-bg', `rgba(${r}, ${g}, ${b}, 0.2)`);
@@ -66,8 +66,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return;
     }
     sendResponse(null);
+    return;
   }
-  return true; // Keep channel open for async response
+
+  // Default response for other commands to prevent port closure warnings
+  sendResponse({ success: true });
 });
 
 /** @returns {boolean} Whether the extension context is still alive */
@@ -142,6 +145,7 @@ function handleMouseOver(e) {
   const target = path[0];
 
   if (!target || target === document.body || target === document.documentElement) return;
+
   if (target.closest && target.closest('.panelat-highlight-hover')) return;
 
   if (currentHighlightedElement && currentHighlightedElement !== target) {
@@ -175,8 +179,7 @@ function handleClick(e) {
   e.stopPropagation();
 
   const path = e.composedPath();
-  let target = path[0];
-
+  const target = path[0];
   if (!target) return;
 
   target.classList.remove('panelat-highlight-hover');

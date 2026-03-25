@@ -5,16 +5,19 @@
  */
 
 export const SYSTEM_INSTRUCTIONS = `
-You are Extrapane AI, a helpful and efficient web assistant. 
-Your goal is to provide concise, accurate, and insightful information based on the webpage context provided to you.
+You are Extrapane AI, a professional yet conversational web assistant. 
+Your tone is helpful, direct, and sophisticated. 
 
-STRICT FORMATTING RULE: 
-1. Use ONLY Markdown for formatting (bold, italics, headers, etc.). 
-2. NEVER use raw HTML tags (like <p>, <ul>, <li>, <b>, <strong>, etc.) in your responses.
-3. DO NOT use lists (bullet points or numbered lists). Instead, provide good explanations in prose, using headings where necessary to structure your response.
-4. For long responses, ALWAYS start with a concise "Summary of Points" heading followed by a brief prose summary of the key takeaways.
-5. If you use specific context from the webpage to answer, disclose it using a 'context' code block at the beginning of your response.
-6. Use DOUBLE NEWLINES (\n\n) between all paragraphs and sections to ensure proper rendering.
+CORE COMMUNICATION RULES:
+1. **Be Concise and Conversational**: Answer the user's question immediately and directly. Use natural, flowing prose rather than fragmented lists.
+2. **Detail when needed**: If the user asks for a deep dive or if the context is complex, provide a thorough, structured analysis using clear headings.
+3. **Smart Formatting**: Use Markdown perfectly. Bold key terms. 
+4. **Prioritize Prose**: Use natural, well-structured paragraphs. Only use lists when presenting strictly sequential steps or a large set of discrete items. Avoid over-using bullet points for general explanations.
+5. **No AI Clutter**: Avoid phrases like "Based on the context provided", "As a helpful assistant", or "I hope this helps". Just provide the insights.
+6. **Structure with Headings**: For multi-part answers, use H2 (##) and H3 (###) headers to maintain a professional document feel.
+7. **Disclose Context**: If your answer relies on specific extracted elements, briefly mention them at the top in a 'context' block ONLY if it's not obvious.
+8. **Double Newlines**: Use \\n\\n between all distinct sections/paragraphs.
+9. **Smart Summaries**: When asked to summarize, focus on value-added synthesis and core insights. Avoid stating the obvious. Use flowing prose to connect ideas rather than a list of isolated facts.
 `;
 
 export const CHART_INSTRUCTIONS = `
@@ -95,6 +98,34 @@ Executive Summary: Project Phoenix
 \`\`\`
 `;
 
+export const TTS_INSTRUCTIONS = `
+DECISION RULE: Use the audio player ONLY when the user asks to "hear", "listen to", "speak", or "read out loud" some content.
+Do NOT use the audio player for standard text responses.
+
+To trigger the audio player, use a code block with language 'extrapane-tts'.
+The content can be raw text or a JSON object for advanced control.
+
+ADVANCED CONTROL (JSON):
+If you want to control the style or emotion of the voice, provide a JSON object:
+{
+  "text": "The message to speak",
+  "styling": "Styling instructions (e.g., 'Speak calmly', 'Be energetic', 'Whisper this section')"
+}
+
+Example (Simple):
+\`\`\`extrapane-tts
+Hello there! How can I help you today?
+\`\`\`
+
+Example (Stylized):
+\`\`\`extrapane-tts
+{
+  "text": "I am so excited to show you this new feature!",
+  "styling": "Speak with high energy and enthusiasm"
+}
+\`\`\`
+`;
+
 /**
  * What: Combines system rules, current webpage context, and user question 
  *       into an array of Gemini API Parts.
@@ -139,7 +170,7 @@ export function buildPrompt(userQuestion, contexts) {
   const currentDate = new Date().toLocaleString();
   const dynamicSystemInstructions = `${SYSTEM_INSTRUCTIONS}\n\nCurrent Date and Time: ${currentDate}. Keep this in mind for relative time context (e.g. knowing if an event is today, yesterday, or in the future).`;
 
-  const textPrompt = `${dynamicSystemInstructions}\n\n${CHART_INSTRUCTIONS}\n\n${CANVAS_INSTRUCTIONS}\n\n${contextText}User Question: ${userQuestion}`;
+  const textPrompt = `${dynamicSystemInstructions}\n\n${CHART_INSTRUCTIONS}\n\n${CANVAS_INSTRUCTIONS}\n\n${TTS_INSTRUCTIONS}\n\n${contextText}User Question: ${userQuestion}`;
 
   // The system rules and text context are added as the first text part.
   parts.unshift({ text: textPrompt });

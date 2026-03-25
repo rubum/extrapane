@@ -5,6 +5,7 @@
  */
 
 import { elements, escapeHtml, smartScroll } from './ui.js';
+import { state, saveTabsToStorage } from './state.js';
 
 // Custom Marked Renderer for rich media and code blocks
 const renderer = new marked.Renderer();
@@ -22,7 +23,7 @@ mermaid.initialize({
  */
 function renderMath(text) {
   if (typeof text !== 'string') return text;
-  
+
   let processed = text;
   // Block math: $$ ... $$
   processed = processed.replace(/\$\$(.+?)\$\$/gs, (match, formula) => {
@@ -72,7 +73,7 @@ marked.use({
         const lines = code.split('\n');
         const title = lines[0] || 'Untitled Canvas';
         const html = lines.slice(1).join('\n');
-        
+
         return `
           <div class="canvas-trigger-card" data-title="${escapeHtml(title)}" data-html="${escapeHtml(html)}">
             <div class="canvas-icon-box">
@@ -104,6 +105,46 @@ marked.use({
         `;
       }
 
+      if (lang === 'extrapane-tts') {
+        let textToSpeak = code;
+        let styling = '';
+        
+        try {
+          // Attempt to parse as JSON for advanced styling control
+          const parsed = JSON.parse(code);
+          if (parsed.text) {
+            textToSpeak = parsed.text;
+            styling = parsed.styling || '';
+          }
+        } catch (e) {
+          // Not JSON, treat as raw text
+        }
+
+        return `
+          <div class="tts-player" data-text="${escapeHtml(textToSpeak)}" data-styling="${escapeHtml(styling)}">
+            <div class="tts-player-content">
+              <div class="tts-visualizer">
+                <div class="tts-bar"></div>
+                <div class="tts-bar"></div>
+                <div class="tts-bar"></div>
+                <div class="tts-bar"></div>
+                <div class="tts-bar"></div>
+              </div>
+              <div class="tts-controls">
+                <button class="tts-control-btn play-pause-btn" title="Play/Pause">
+                  <svg class="play-icon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M5 3l14 9-14 9V3z"></path></svg>
+                  <svg class="pause-icon hidden" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
+                </button>
+                <button class="tts-control-btn stop-btn" title="Stop">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12"></rect></svg>
+                </button>
+              </div>
+              <div class="tts-status">Ready to play</div>
+            </div>
+          </div>
+        `;
+      }
+
       const validLanguage = lang && hljs.getLanguage(lang) ? lang : 'plaintext';
       const highlighted = hljs.highlight(code, { language: validLanguage }).value;
 
@@ -127,10 +168,10 @@ marked.use({
 export function renderCharts(container) {
   const chartBlocks = container.querySelectorAll('.chart-canvas');
   const isDark = document.body.classList.contains('dark-theme');
-  
+
   // Premium, high-contrast palette
-  const lightColors = ['#6366f1', '#10b981', '#f43f5e', '#f59e0b', '#8b5cf6', '#06b6d4'];
-  const darkColors = ['#818cf8', '#34d399', '#fb7185', '#fbbf24', '#a78bfa', '#22d3ee'];
+  const lightColors = ['#2563eb', '#10b981', '#ef4444', '#f59e0b', '#8b5cf6', '#06b6d4'];
+  const darkColors = ['#3b82f6', '#34d399', '#f87171', '#fbbf24', '#a78bfa', '#22d3ee'];
   const palette = isDark ? darkColors : lightColors;
 
   chartBlocks.forEach(canvas => {
@@ -143,23 +184,38 @@ export function renderCharts(container) {
       if (config.data && config.data.datasets) {
         config.data.datasets.forEach((ds, i) => {
           const color = palette[i % palette.length];
-          
+          const themeColor = state.userThemeColor || '#2563eb';
+
           if (!ds.borderColor) ds.borderColor = color;
-          if (!ds.backgroundColor) ds.backgroundColor = color + (isDark ? '33' : '22');
+          if (!ds.backgroundColor) ds.backgroundColor = color + (isDark ? '22' : '1a');
           
-          // Line smoothing and precision
+          // Hover Effects - Use Theme Color for Branded Interaction
+          ds.hoverBackgroundColor = themeColor + (isDark ? '66' : '44');
+          ds.hoverBorderColor = themeColor;
+          ds.hoverBorderWidth = 2;
+
+          // Type-Specific Enhancements
           if (config.type === 'line') {
             ds.tension = ds.tension ?? 0.4;
             ds.borderWidth = ds.borderWidth ?? 2.5;
             ds.pointRadius = ds.pointRadius ?? 4;
-            ds.pointHoverRadius = ds.pointHoverRadius ?? 6;
-            ds.pointBackgroundColor = '#fff';
+            ds.pointHoverRadius = ds.pointHoverRadius ?? 7;
+            ds.pointBackgroundColor = color;
+            ds.pointHoverBackgroundColor = themeColor;
             ds.pointBorderWidth = 2;
+            ds.pointHoverBorderWidth = 3;
           }
-          
+
           if (config.type === 'bar') {
             ds.borderRadius = ds.borderRadius ?? 6;
-            ds.borderWidth = 0;
+            ds.borderSkipped = false;
+          }
+
+          if (config.type === 'pie' || config.type === 'doughnut') {
+            ds.hoverOffset = 15;
+            ds.borderWidth = 2;
+            ds.borderColor = isDark ? '#0f172a' : '#fff';
+            ds.hoverBorderColor = themeColor;
           }
         });
       }
@@ -221,7 +277,7 @@ export function renderCharts(container) {
 
       // Merge defaults with AI-provided options
       config.options = { ...defaultOptions, ...config.options };
-      
+
       // Force typography in case AI tried to override it poorly
       Chart.defaults.font.family = "'Inter', sans-serif";
 
@@ -307,14 +363,34 @@ export function clearWelcomeCard() {
 
 /**
  * Appends a static message (user or finalized AI) to the chat.
+ * Now supports optional video attachments for persistence.
  * @returns {HTMLElement} The message container
  */
-export function appendMessage(sender, htmlContent, index) {
+export function appendMessage(sender, htmlContent, index, videoData, usage) {
   clearWelcomeCard();
   const isAI = sender === 'AI';
   const container = document.createElement('div');
   container.className = `message ${isAI ? 'ai' : 'user'}`;
   if (index !== undefined) container.setAttribute('data-index', index);
+
+  let videoHtml = '';
+  // Only show video in the user's prompt message to avoid redundancy
+  if (videoData && !isAI) {
+    if (videoData.type === 'video/youtube' || videoData.src?.includes('youtube.com') || videoData.src?.includes('youtu.be')) {
+      const videoId = dataToYoutubeId(videoData.src);
+      videoHtml = `
+        <div class="message-video-container">
+          <iframe src="https://www.youtube.com/embed/${videoId}" frameborder="0" allowfullscreen></iframe>
+        </div>
+      `;
+    } else {
+      videoHtml = `
+        <div class="message-video-container">
+          <video ${videoData.src ? `src="${videoData.src}"` : ''} controls></video>
+        </div>
+      `;
+    }
+  }
 
   const actionsHtml = `
     <div class="message-actions">
@@ -333,13 +409,38 @@ export function appendMessage(sender, htmlContent, index) {
     </div>
   `;
 
+  let usageHtml = '';
+  if (isAI && usage) {
+    const { promptTokenCount, candidatesTokenCount, totalTokenCount } = usage;
+    usageHtml = `
+      <div class="message-usage" title="Input: ${promptTokenCount} | Output: ${candidatesTokenCount}">
+        ${totalTokenCount} tokens
+      </div>
+    `;
+  }
+
   container.innerHTML = `
-    <div class="message-content">${htmlContent}</div>
+    <div class="message-content">
+      ${videoHtml}
+      ${htmlContent}
+      ${usageHtml}
+    </div>
     ${actionsHtml}
     ${!isAI ? '<div class="edit-area"></div>' : ''}
   `;
 
   elements.chatHistory.appendChild(container);
+
+  // Re-hydrate video if needed
+  if (videoData && videoData.mediaId && !videoData.src) {
+    getMedia(videoData.mediaId).then(blob => {
+      if (blob) {
+        const url = URL.createObjectURL(blob);
+        const video = container.querySelector('video');
+        if (video) video.src = url;
+      }
+    });
+  }
 
   if (isAI) {
     renderCharts(container);
@@ -382,13 +483,167 @@ export function appendStreamingMessage(index) {
       contentDiv.innerHTML = renderMath(marked.parse(markdownText));
       smartScroll();
     },
-    finalize: (finalText) => {
+    finalize: (finalText, usage) => {
       container.classList.remove('streaming');
       contentDiv.classList.remove('is-thinking');
-      contentDiv.innerHTML = renderMath(marked.parse(finalText));
+      
+      let usageHtml = '';
+      if (usage) {
+        usageHtml = `<div class="message-usage" title="Input: ${usage.promptTokenCount} | Output: ${usage.candidatesTokenCount}">${usage.totalTokenCount} tokens</div>`;
+      }
+
+      contentDiv.innerHTML = renderMath(marked.parse(finalText)) + usageHtml;
       renderCharts(contentDiv);
       renderDiagrams(contentDiv);
       smartScroll();
     }
   };
 }
+
+/**
+ * Creates a special background task message with a progress bar and video preview.
+ */
+import { saveMedia, getMedia } from './mediaStore.js';
+
+/**
+ * Creates a special background task message with a progress bar and video preview.
+ * Now supports persistence by saving task state to the tab history and binary data to IndexedDB.
+ */
+export function appendProgressMessage(sender, taskName, videoData, taskId, tabId) {
+  clearWelcomeCard();
+
+  // 1. Ensure task exists in history for persistence
+  const tab = state.tabs.find(t => t.id === tabId) || { history: [] };
+  let historyEntry = tab.history.find(m => m.taskId === taskId);
+
+  if (!historyEntry) {
+    historyEntry = {
+      role: 'assistant',
+      type: 'task',
+      taskId: taskId,
+      taskName: taskName,
+      videoData: { ...videoData }, // Clone to avoid mutation issues
+      progress: 0,
+      statusText: 'Initializing...',
+      sender: sender
+    };
+
+    // If we have a raw blob/file, save it to persistent store
+    if (videoData && videoData.file) {
+      saveMedia(videoData.file).then(mediaId => {
+        historyEntry.videoData.mediaId = mediaId;
+        delete historyEntry.videoData.file; // Don't store large blobs in chrome.storage
+        saveTabsToStorage();
+      });
+    }
+
+    tab.history.push(historyEntry);
+    saveTabsToStorage();
+  }
+
+  const container = document.createElement('div');
+  container.className = `message ${sender.toLowerCase()} task-message`;
+  container.setAttribute('data-task-id', taskId);
+
+  const contentDiv = document.createElement('div');
+  contentDiv.className = 'message-content';
+
+  contentDiv.innerHTML = `
+    <div class="task-info">
+      <div class="task-title"><b>Task:</b> ${escapeHtml(taskName)}</div>
+      <div class="progress-container">
+        <div class="progress-bar" style="width: ${historyEntry.progress}%"></div>
+      </div>
+      <div class="progress-status">${escapeHtml(historyEntry.statusText)}</div>
+    </div>
+  `;
+  container.appendChild(contentDiv);
+  elements.chatHistory.appendChild(container);
+
+  const bar = contentDiv.querySelector('.progress-bar');
+  const status = contentDiv.querySelector('.progress-status');
+  smartScroll();
+
+  return {
+    update: (percent, statusText) => {
+      // Update DOM
+      if (bar) bar.style.width = `${percent}%`;
+      if (statusText && status) status.innerText = statusText;
+
+      // Update Persistent History
+      historyEntry.progress = percent;
+      historyEntry.statusText = statusText;
+
+      // Update Global Task State for badges
+      const globalTask = state.tasks.find(t => t.id === taskId);
+      if (globalTask) {
+        globalTask.progress = percent;
+        globalTask.status = statusText;
+      }
+
+      smartScroll();
+    },
+    finalize: (finalText, usage) => {
+      // Remove Task UI
+      const taskInfo = contentDiv.querySelector('.task-info');
+      if (taskInfo) taskInfo.remove();
+
+      let usageHtml = '';
+      if (usage) {
+        usageHtml = `<div class="message-usage" title="Input: ${usage.promptTokenCount} | Output: ${usage.candidatesTokenCount}">${usage.totalTokenCount} tokens</div>`;
+      }
+
+      // Add Result
+      const responseContent = document.createElement('div');
+      responseContent.className = 'response-text';
+      responseContent.innerHTML = renderMath(marked.parse(finalText)) + usageHtml;
+      contentDiv.appendChild(responseContent);
+
+      // Convert history entry to a normal message
+      historyEntry.role = 'model';
+      historyEntry.type = 'chat';
+      historyEntry.parts = [{ text: finalText }];
+      historyEntry.usage = usage;
+      delete historyEntry.taskId;
+      delete historyEntry.progress;
+      delete historyEntry.statusText;
+      delete historyEntry.taskName;
+      // We keep videoData for persistence!
+
+      // Remove from global tasks to stop badge pulsing
+      state.tasks = state.tasks.filter(t => t.id !== taskId);
+      window.dispatchEvent(new CustomEvent('task-updated'));
+
+      saveTabsToStorage();
+      renderCharts(contentDiv);
+      renderDiagrams(contentDiv);
+      smartScroll();
+    },
+    error: (errorMessage) => {
+      const taskInfo = contentDiv.querySelector('.task-info');
+      if (taskInfo) {
+        taskInfo.innerHTML = `
+          <div class="error-bubble">
+            <b>Analysis Failed:</b> ${escapeHtml(errorMessage)}
+          </div>
+        `;
+      }
+
+      // Update history
+      historyEntry.statusText = 'Failed: ' + errorMessage;
+
+      // Remove from global tasks
+      state.tasks = state.tasks.filter(t => t.id !== taskId);
+      window.dispatchEvent(new CustomEvent('task-updated'));
+
+      saveTabsToStorage();
+      smartScroll();
+    }
+  };
+}
+
+function dataToYoutubeId(url) {
+  const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=))([^"&?\/\s]{11})/);
+  return (match && match[1]) ? match[1] : '';
+}
+
