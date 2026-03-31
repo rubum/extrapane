@@ -105,6 +105,20 @@ marked.use({
         `;
       }
 
+      if (lang === 'extrapane-transcription') {
+        return `
+          <div class="transcription-container">
+            <div class="transcription-header">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
+              <span>Transcription</span>
+            </div>
+            <div class="transcription-content">
+              ${code.split('\n').map(line => `<p>${escapeHtml(line)}</p>`).join('')}
+            </div>
+          </div>
+        `;
+      }
+
       if (lang === 'extrapane-tts') {
         let textToSpeak = code;
         let styling = '';
@@ -366,7 +380,7 @@ export function clearWelcomeCard() {
  * Now supports optional video attachments for persistence.
  * @returns {HTMLElement} The message container
  */
-export function appendMessage(sender, htmlContent, index, videoData, usage) {
+export function appendMessage(sender, htmlContent, index, videoData, usage, contextSummary) {
   clearWelcomeCard();
   const isAI = sender === 'AI';
   const container = document.createElement('div');
@@ -390,6 +404,23 @@ export function appendMessage(sender, htmlContent, index, videoData, usage) {
         </div>
       `;
     }
+  }
+
+  let contextHtml = '';
+  if (!isAI && contextSummary && contextSummary.length > 0) {
+    const detailItems = contextSummary.map(c => `<li><b>${c.tag}:</b> ${c.name || '(No name)'}</li>`).join('');
+    contextHtml = `
+      <div class="message-context-tag">
+        <div class="context-tag-header">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+          <span>${contextSummary.length} Context Chip${contextSummary.length > 1 ? 's' : ''}</span>
+          <svg class="context-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+        </div>
+        <div class="message-context-details hidden">
+          <ul>${detailItems}</ul>
+        </div>
+      </div>
+    `;
   }
 
   const actionsHtml = `
@@ -422,7 +453,8 @@ export function appendMessage(sender, htmlContent, index, videoData, usage) {
   container.innerHTML = `
     <div class="message-content">
       ${videoHtml}
-      ${htmlContent}
+      ${contextHtml}
+      <div class="message-text">${htmlContent}</div>
       ${usageHtml}
     </div>
     ${actionsHtml}

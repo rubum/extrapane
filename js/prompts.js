@@ -18,6 +18,7 @@ CORE COMMUNICATION RULES:
 7. **Disclose Context**: If your answer relies on specific extracted elements, briefly mention them at the top in a 'context' block ONLY if it's not obvious.
 8. **Double Newlines**: Use \\n\\n between all distinct sections/paragraphs.
 9. **Smart Summaries**: When asked to summarize, focus on value-added synthesis and core insights. Avoid stating the obvious. Use flowing prose to connect ideas rather than a list of isolated facts.
+10. **Transcription Handling**: When providing deep video or audio transcriptions, ALWAYS wrap the transcription text in a code block with language 'extrapane-transcription'.
 `;
 
 export const CHART_INSTRUCTIONS = `
@@ -126,12 +127,14 @@ Example (Stylized):
 \`\`\`
 `;
 
+export function getSystemInstructions() {
+  const currentDate = new Date().toLocaleString();
+  return `${SYSTEM_INSTRUCTIONS}\n\n${CHART_INSTRUCTIONS}\n\n${CANVAS_INSTRUCTIONS}\n\n${TTS_INSTRUCTIONS}\n\nCurrent Date and Time: ${currentDate}.`;
+}
+
 /**
- * What: Combines system rules, current webpage context, and user question 
- *       into an array of Gemini API Parts.
- * Why: The Gemini API expects an array of "parts" for a multimodal prompt. 
- *      We need to send text, and optionally inline data objects for images 
- *      extracted from the webpage context.
+ * What: Combines webpage context and user question into Gemini API Parts.
+ * Why: Context is now ephemeral and handled per-turn.
  */
 export function buildPrompt(userQuestion, contexts) {
   let contextText = "";
@@ -141,25 +144,22 @@ export function buildPrompt(userQuestion, contexts) {
     contextText = "CONTEXT FROM WEBPAGE ELEMENTS AND FILES:\n" +
       contexts.map(c => `[${c.tag || 'Element'}${c.name ? ': ' + c.name : ''}]: ${c.text || '(Binary data/Image)'}`).join("\n") + "\n\n";
 
-    // Add binary data parts for any context that includes base64 strings
     contexts.forEach(c => {
-      // Handle the new array format from main.js for images
       if (c.base64Images && c.base64Images.length > 0) {
         c.base64Images.forEach(img => {
           parts.push({
-            inlineData: {
-              mimeType: img.mimeType,
+            inline_data: {
+              mime_type: img.mimeType,
               data: img.base64
             }
           });
         });
       }
 
-      // Handle single file attachments (e.g., PDF)
       if (c.base64File) {
         parts.push({
-          inlineData: {
-            mimeType: c.base64File.mimeType,
+          inline_data: {
+            mime_type: c.base64File.mimeType,
             data: c.base64File.base64
           }
         });
@@ -167,12 +167,7 @@ export function buildPrompt(userQuestion, contexts) {
     });
   }
 
-  const currentDate = new Date().toLocaleString();
-  const dynamicSystemInstructions = `${SYSTEM_INSTRUCTIONS}\n\nCurrent Date and Time: ${currentDate}. Keep this in mind for relative time context (e.g. knowing if an event is today, yesterday, or in the future).`;
-
-  const textPrompt = `${dynamicSystemInstructions}\n\n${CHART_INSTRUCTIONS}\n\n${CANVAS_INSTRUCTIONS}\n\n${TTS_INSTRUCTIONS}\n\n${contextText}User Question: ${userQuestion}`;
-
-  // The system rules and text context are added as the first text part.
+  const textPrompt = `${contextText}User Question: ${userQuestion}`;
   parts.unshift({ text: textPrompt });
 
   return parts;

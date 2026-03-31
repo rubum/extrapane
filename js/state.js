@@ -61,7 +61,8 @@ export function loadSettings(callback) {
         id: Date.now().toString(),
         title: 'New Chat',
         history: [],
-        contexts: []
+        contexts: [],
+        usage: { promptTokens: 0, candidatesTokens: 0, totalTokens: 0 }
       };
       state.tabs = [defaultTab];
       state.activeTabId = defaultTab.id;

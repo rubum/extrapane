@@ -11,7 +11,7 @@ import {
   saveTabsToStorage,
   saveUsageToStorage
 } from './state.js';
-import { buildPrompt } from './prompts.js';
+import { buildPrompt, getSystemInstructions } from './prompts.js';
 import { getAIProvider } from './api.js';
 import { elements, applyTheme, applyThemeColor, smartScroll, showToast, scrollToBottom, escapeHtml } from './ui.js';
 import {
@@ -81,7 +81,8 @@ function createTab() {
     id: Date.now().toString(),
     title: 'New Chat',
     history: [],
-    contexts: []
+    contexts: [],
+    usage: { promptTokens: 0, candidatesTokens: 0, totalTokens: 0 }
   };
   state.tabs.push(newTab);
   state.activeTabId = newTab.id;
@@ -143,8 +144,11 @@ function renderTabs() {
       tabEl.classList.add('has-task');
     }
 
+    const tabUsageK = tab.usage ? (tab.usage.totalTokens / 1000).toFixed(1) : '0.0';
+
     tabEl.innerHTML = `
       <span class="tab-title">${escapeHtml(tab.title)}</span>
+      ${tab.usage && tab.usage.totalTokens > 0 ? `<span class="tab-usage-badge">${tabUsageK}k</span>` : ''}
       <div class="task-badge"></div>
       <span class="close-tab" data-id="${tab.id}">&times;</span>
     `;
@@ -209,10 +213,21 @@ async function sendMessage(text) {
   const currentTab = getActiveTab();
   const promptParts = buildPrompt(text, currentTab.contexts);
   const userIndex = currentTab.history.length;
-  appendMessage('user', marked.parse(text), userIndex);
+  const contextSummary = currentTab.contexts.map(c => ({ tag: c.tag, name: c.name }));
+  appendMessage('user', marked.parse(text), userIndex, null, null, contextSummary);
   scrollToBottom();
 
-  currentTab.history.push({ role: "user", parts: promptParts });
+  const userTurn = { 
+    role: "user", 
+    parts: promptParts,
+    contextSummary: contextSummary
+  };
+  const systemInstruction = getSystemInstructions();
+  currentTab.history.push(userTurn);
+
+  // Clear Ephemeral Context After Push to History for the Turn
+  currentTab.contexts = [];
+  renderContextChips();
 
   // Update tab title if it's the first message
   if (currentTab.history.length === 1) {
@@ -231,12 +246,19 @@ async function sendMessage(text) {
     const aiIndex = currentTab.history.length;
     streaming = appendStreamingMessage(aiIndex);
     let accumulatedText = '';
+    const uncompactedHistory = currentTab.history.filter(m => !m.compacted);
+
+    let finalSystemInstruction = systemInstruction;
+    if (currentTab.condensedSummary) {
+      finalSystemInstruction += `\n\n[Summary of earlier conversation context]:\n${currentTab.condensedSummary}`;
+    }
 
     const stream = provider.streamGenerateContent(
       state.userApiKey,
       state.userModel,
-      currentTab.history.slice(0, -1),
-      promptParts
+      uncompactedHistory.slice(0, -1),
+      promptParts,
+      finalSystemInstruction
     );
 
     let finalUsage = null;
@@ -250,11 +272,25 @@ async function sendMessage(text) {
       }
     }
 
-    // Process Usage Metadata
+    // Process Usage Metadata (Global & Tab-Specific)
     if (finalUsage) {
-      state.usage.promptTokens += (finalUsage.promptTokenCount || 0);
-      state.usage.candidatesTokens += (finalUsage.candidatesTokenCount || 0);
-      state.usage.totalTokens += (finalUsage.totalTokenCount || 0);
+      const pCount = (finalUsage.promptTokenCount || 0);
+      const cCount = (finalUsage.candidatesTokenCount || 0);
+      const tCount = (finalUsage.totalTokenCount || 0);
+
+      // Global
+      state.usage.promptTokens += pCount;
+      state.usage.candidatesTokens += cCount;
+      state.usage.totalTokens += tCount;
+
+      // Tab Specific
+      if (!currentTab.usage) {
+        currentTab.usage = { promptTokens: 0, candidatesTokens: 0, totalTokens: 0 };
+      }
+      currentTab.usage.promptTokens += pCount;
+      currentTab.usage.candidatesTokens += cCount;
+      currentTab.usage.totalTokens += tCount;
+
       saveUsageToStorage();
       updateUsageHeader();
     }
@@ -266,6 +302,9 @@ async function sendMessage(text) {
       usage: finalUsage
     });
     saveTabsToStorage();
+
+    // Trigger compaction background process
+    compactHistory(currentTab.id);
 
     // Autoplay if the message contains a TTS player
     const lastMessage = elements.chatHistory.lastElementChild;
@@ -286,13 +325,77 @@ async function sendMessage(text) {
   }
 }
 
+/**
+ * Automatically compacts conversation history to save tokens.
+ * Triggers when history has more than 16 uncompacted messages.
+ * Keeps the most recent 6 messages, condenses the rest into a single summary.
+ */
+async function compactHistory(tabId) {
+  const tab = state.tabs.find(t => t.id === tabId);
+  if (!tab || tab.isCompacting) return;
+
+  const MAX_UNCOMPACTED = 16;
+  const KEEP_RECENT = 6;
+
+  const uncompactedStartIndex = tab.history.findIndex(m => !m.compacted);
+  if (uncompactedStartIndex === -1) return;
+  
+  const uncompactedCount = tab.history.length - uncompactedStartIndex;
+  if (uncompactedCount <= MAX_UNCOMPACTED) return;
+
+  tab.isCompacting = true;
+
+  try {
+    const provider = getAIProvider(state.userModel);
+    
+    // Select messages to summarize
+    const endIndex = tab.history.length - KEEP_RECENT;
+    const messagesToSummarize = tab.history.slice(uncompactedStartIndex, endIndex);
+    
+    // Format them for the prompt
+    let conversationText = "";
+    if (tab.condensedSummary) {
+       conversationText += `[Existing Summary of earlier conversation]:\n${tab.condensedSummary}\n\n`;
+    }
+    
+    for (const msg of messagesToSummarize) {
+      const role = msg.role === 'user' ? 'User' : 'AI';
+      let content = msg.parts[0]?.text || '';
+      if (role === 'User' && content.includes('User Question:')) {
+         content = extractUserQuestion(content);
+      }
+      conversationText += `${role}: ${content}\n\n`;
+    }
+
+    const summary = await provider.generateSummary(state.userApiKey, state.userModel, conversationText);
+
+    tab.condensedSummary = summary;
+    
+    // Mark as compacted
+    for (const msg of messagesToSummarize) {
+      msg.compacted = true;
+    }
+    
+    saveTabsToStorage();
+    showToast("Background history compaction completed.");
+
+  } catch (error) {
+    console.error("Compaction failed:", error);
+  } finally {
+    tab.isCompacting = false;
+  }
+}
+
 /** Updates the cumulative token usage display in the app header. */
 function updateUsageHeader() {
   const headerUsage = document.getElementById('headerUsage');
   if (headerUsage) {
     const totalK = (state.usage.totalTokens / 1000).toFixed(1);
-    headerUsage.innerText = `${totalK}k Tokens`;
-    headerUsage.title = `Prompt: ${state.usage.promptTokens} | Response: ${state.usage.candidatesTokens} | Total: ${state.usage.totalTokens}`;
+    const currentTab = getActiveTab();
+    const tabTotalK = currentTab && currentTab.usage ? (currentTab.usage.totalTokens / 1000).toFixed(1) : '0.0';
+    
+    headerUsage.innerText = `${totalK}k Overall • ${tabTotalK}k Tab`;
+    headerUsage.title = `OVERALL: ${state.usage.totalTokens} | TAB: ${currentTab && currentTab.usage ? currentTab.usage.totalTokens : 0}`;
   }
 }
 
@@ -312,7 +415,7 @@ function reconstructChatFromHistory() {
     } else {
       const isUser = msg.role === 'user';
       const content = isUser ? extractUserQuestion(msg.parts[0].text) : msg.parts[0].text;
-      appendMessage(isUser ? 'user' : 'AI', marked.parse(content), index, msg.videoData, msg.usage);
+      appendMessage(isUser ? 'user' : 'AI', marked.parse(content), index, msg.videoData, msg.usage, msg.contextSummary);
     }
   });
   scrollToBottom();
@@ -1492,6 +1595,14 @@ elements.chatHistory.addEventListener('click', (e) => {
     return;
   }
 
+  const contextTag = e.target.closest('.message-context-tag');
+  if (contextTag) {
+    const details = contextTag.querySelector('.message-context-details');
+    details.classList.toggle('hidden');
+    contextTag.classList.toggle('open');
+    return;
+  }
+
   const collapseTrigger = e.target.closest('.collapse-trigger');
   if (collapseTrigger) {
     const collapseBox = collapseTrigger.closest('.context-collapse');
@@ -1505,7 +1616,7 @@ elements.chatHistory.addEventListener('click', (e) => {
   const index = msgContainer?.getAttribute('data-index');
 
   if (btn.classList.contains('copy-btn')) {
-    const text = msgContainer.querySelector('.message-content').innerText;
+    const text = msgContainer.querySelector('.message-text').innerText;
     navigator.clipboard.writeText(text).then(() => showToast('Copied to clipboard!'));
   }
 
@@ -1541,6 +1652,11 @@ elements.chatHistory.addEventListener('click', (e) => {
     if (newText.trim()) {
       const currentTab = getActiveTab();
       currentTab.history = currentTab.history.slice(0, idx);
+      
+      // Reset compaction state on branch edit
+      currentTab.condensedSummary = "";
+      currentTab.history.forEach(m => m.compacted = false);
+
       saveTabsToStorage();
       reconstructChatFromHistory();
       sendMessage(newText);
@@ -1559,6 +1675,11 @@ elements.chatHistory.addEventListener('click', (e) => {
       if (lastUserMsg && lastUserMsg.role === 'user') {
         const question = extractUserQuestion(lastUserMsg.parts[0].text);
         currentTab.history = currentTab.history.slice(0, idx - 1);
+        
+        // Reset compaction state on retry branch
+        currentTab.condensedSummary = "";
+        currentTab.history.forEach(m => m.compacted = false);
+        
         saveTabsToStorage();
         reconstructChatFromHistory();
         sendMessage(question);

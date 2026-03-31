@@ -286,6 +286,23 @@ body {
   text-overflow: ellipsis;
 }
 
+.tab-usage-badge {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--text-muted);
+  background: var(--border-color);
+  padding: 1px 6px;
+  border-radius: 6px;
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+.tab-item.active .tab-usage-badge {
+  background: var(--accent-primary);
+  color: #fff;
+  opacity: 1;
+}
+
 .close-tab {
   display: flex;
   align-items: center;
@@ -456,6 +473,88 @@ body {
   color: #ffffff;
   border-bottom-right-radius: 4px;
   box-shadow: 0 8px 24px rgba(37, 99, 235, 0.15);
+  display: flex;
+  flex-direction: column;
+}
+
+.message-context-tag {
+  display: flex;
+  flex-direction: column;
+  font-size: 10px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.15);
+  padding: 0;
+  border-radius: 12px;
+  margin-bottom: 10px;
+  width: fit-content;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  cursor: pointer;
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+
+.context-tag-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  user-select: none;
+}
+
+.message-context-tag:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.message-context-tag.open {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+}
+
+.context-chevron {
+  transition: transform 0.2s ease;
+  opacity: 0.7;
+}
+
+.message-context-tag.open .context-chevron {
+  transform: rotate(180deg);
+}
+
+.message-context-details {
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.1);
+  max-height: 200px;
+  overflow-y: auto;
+  animation: slideDown 0.2s ease-out;
+}
+
+.message-context-details ul {
+  list-style: none;
+  padding: 8px 12px;
+  margin: 0 !important;
+}
+
+.message-context-details li {
+  margin-bottom: 4px !important;
+  font-size: 10px;
+  opacity: 0.9;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.message-context-details li b {
+  color: #fff;
+  opacity: 1;
+}
+
+@keyframes slideDown {
+  from { max-height: 0; opacity: 0; }
+  to { max-height: 200px; opacity: 1; }
+}
+
+.message-context-tag svg {
+  flex-shrink: 0;
 }
 
 /* Collapsible Context Section */
@@ -2506,10 +2605,52 @@ body {
   letter-spacing: -0.3px;
 }
 
-.library-stats {
-  font-size: 10px;
-  color: var(--text-muted);
+.transcription-container {
+  background: var(--bg-hover);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  margin: 12px 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-width: 100%;
+}
+
+.transcription-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  font-size: 11px;
   font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.transcription-header svg {
+  color: var(--primary-color);
+}
+
+.transcription-content {
+  padding: 12px;
+  max-height: 250px;
+  overflow-y: auto;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-main);
+  scrollbar-width: thin;
+}
+
+.transcription-content p {
+  margin-bottom: 8px;
+}
+
+.transcription-content p:last-child {
+  margin-bottom: 0;
 }
 
 /* Segmented Tab Switcher */

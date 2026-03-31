@@ -11,7 +11,7 @@ export const geminiProvider = {
    *      the stream chunks to drive our UI streaming effect in real-time. It accepts 
    *      an array of parts (text + inlineData for images).
    */
-  async *streamGenerateContent(apiKey, model, history, promptParts) {
+  async *streamGenerateContent(apiKey, model, history, promptParts, systemInstruction) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?key=${apiKey}`;
     const sanitizedHistory = history.map(msg => ({
       role: msg.role,
@@ -19,10 +19,17 @@ export const geminiProvider = {
     }));
     const contents = [...sanitizedHistory, { role: "user", parts: promptParts }];
     
+    const body = { contents };
+    if (systemInstruction) {
+      body.system_instruction = {
+        parts: [{ text: systemInstruction }]
+      };
+    }
+
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents })
+      body: JSON.stringify(body)
     });
 
     if (!response.ok) {
@@ -163,5 +170,33 @@ export const geminiProvider = {
     const response = await fetch(url, { method: 'DELETE' });
     if (!response.ok) throw new Error("Failed to delete file.");
     return true;
+  },
+
+  /**
+   * Generates a non-streaming summary of text.
+   * Used for background history compaction.
+   */
+  async generateSummary(apiKey, model, textToSummarize) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    const prompt = `Summarize the following conversation history concisely, preserving all key facts, decisions, and context. Do not omit crucial details. The summary should be written so that an AI reading it later will understand the full context of what has happened so far.\n\nConversation History:\n${textToSummarize}`;
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: prompt }] }]
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error?.message || "Failed to generate summary");
+    }
+
+    const data = await response.json();
+    if (data.candidates && data.candidates.length > 0 && data.candidates[0].content && data.candidates[0].content.parts.length > 0) {
+      return data.candidates[0].content.parts[0].text;
+    }
+    throw new Error("Invalid response format from Gemini API");
   }
 };
