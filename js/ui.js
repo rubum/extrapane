@@ -20,6 +20,8 @@ export const elements = {
   closeSettingsBtn: document.getElementById('closeSettingsBtn'),
   saveSettingsBtn: document.getElementById('saveSettingsBtn'),
   apiKeyInput: document.getElementById('apiKey'),
+  ollamaUrlInput: document.getElementById('ollamaUrl'),
+  ollamaModelInput: document.getElementById('ollamaModel'),
   gcloudApiKeyInput: document.getElementById('gcloudApiKey'),
   gcloudRegionInput: document.getElementById('gcloudRegion'),
   gcloudProjectIdInput: document.getElementById('gcloudProjectId'),
@@ -99,6 +101,12 @@ export function applyThemeColor(colorHex) {
   root.style.setProperty('--accent-secondary', colorHex);
   root.style.setProperty('--accent-accent', colorHex);
   root.style.setProperty('--gradient-main', `linear-gradient(135deg, ${colorHex}, ${colorHex}dd)`);
+
+  const body = document.body;
+  body.style.setProperty('--accent-primary', colorHex);
+  body.style.setProperty('--accent-secondary', colorHex);
+  body.style.setProperty('--accent-accent', colorHex);
+  body.style.setProperty('--gradient-main', `linear-gradient(135deg, ${colorHex}, ${colorHex}dd)`);
 }
 
 /** Instant scroll to the bottom of the chat history. */

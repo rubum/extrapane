@@ -37,6 +37,8 @@ state.notifications = []; // User notifications
 /** Loads user settings and conversation history on startup. */
 loadSettings((loadedState) => {
   if (loadedState.userApiKey) elements.apiKeyInput.value = loadedState.userApiKey;
+  if (loadedState.ollamaUrl) elements.ollamaUrlInput.value = loadedState.ollamaUrl;
+  if (loadedState.ollamaModel) elements.ollamaModelInput.value = loadedState.ollamaModel;
   if (loadedState.gcloudApiKey) elements.gcloudApiKeyInput.value = loadedState.gcloudApiKey;
   if (loadedState.gcloudRegion) elements.gcloudRegionInput.value = loadedState.gcloudRegion;
   if (loadedState.gcloudProjectId) elements.gcloudProjectIdInput.value = loadedState.gcloudProjectId;
@@ -217,17 +219,17 @@ async function sendMessage(text) {
   appendMessage('user', marked.parse(text), userIndex, null, null, contextSummary);
   scrollToBottom();
 
-  const userTurn = { 
-    role: "user", 
+  const userTurn = {
+    role: "user",
     parts: promptParts,
     contextSummary: contextSummary
   };
   const systemInstruction = getSystemInstructions();
   currentTab.history.push(userTurn);
 
-  // Clear Ephemeral Context After Push to History for the Turn
-  currentTab.contexts = [];
-  renderContextChips();
+  // Optimization removed per user request to maintain UX context persistence
+  // currentTab.contexts = [];
+  // renderContextChips();
 
   // Update tab title if it's the first message
   if (currentTab.history.length === 1) {
@@ -253,8 +255,11 @@ async function sendMessage(text) {
       finalSystemInstruction += `\n\n[Summary of earlier conversation context]:\n${currentTab.condensedSummary}`;
     }
 
+    const isOllama = state.userModel.startsWith('ollama');
+    const providerKey = isOllama ? state.ollamaUrl : state.userApiKey;
+
     const stream = provider.streamGenerateContent(
-      state.userApiKey,
+      providerKey,
       state.userModel,
       uncompactedHistory.slice(0, -1),
       promptParts,
@@ -262,10 +267,15 @@ async function sendMessage(text) {
     );
 
     let finalUsage = null;
+    let accumulatedThought = '';
     for await (const chunk of stream) {
+      if (chunk.thought) {
+        accumulatedThought += chunk.thought;
+        streaming.update(accumulatedText, accumulatedThought);
+      }
       if (chunk.text) {
         accumulatedText += chunk.text;
-        streaming.update(accumulatedText);
+        streaming.update(accumulatedText, accumulatedThought);
       }
       if (chunk.usage) {
         finalUsage = chunk.usage;
@@ -295,10 +305,11 @@ async function sendMessage(text) {
       updateUsageHeader();
     }
 
-    streaming.finalize(accumulatedText, finalUsage);
+    streaming.finalize(accumulatedText, finalUsage, accumulatedThought);
     currentTab.history.push({
       role: "model",
       parts: [{ text: accumulatedText }],
+      thought: accumulatedThought,
       usage: finalUsage
     });
     saveTabsToStorage();
@@ -339,7 +350,7 @@ async function compactHistory(tabId) {
 
   const uncompactedStartIndex = tab.history.findIndex(m => !m.compacted);
   if (uncompactedStartIndex === -1) return;
-  
+
   const uncompactedCount = tab.history.length - uncompactedStartIndex;
   if (uncompactedCount <= MAX_UNCOMPACTED) return;
 
@@ -347,35 +358,38 @@ async function compactHistory(tabId) {
 
   try {
     const provider = getAIProvider(state.userModel);
-    
+
     // Select messages to summarize
     const endIndex = tab.history.length - KEEP_RECENT;
     const messagesToSummarize = tab.history.slice(uncompactedStartIndex, endIndex);
-    
+
     // Format them for the prompt
     let conversationText = "";
     if (tab.condensedSummary) {
-       conversationText += `[Existing Summary of earlier conversation]:\n${tab.condensedSummary}\n\n`;
+      conversationText += `[Existing Summary of earlier conversation]:\n${tab.condensedSummary}\n\n`;
     }
-    
+
     for (const msg of messagesToSummarize) {
       const role = msg.role === 'user' ? 'User' : 'AI';
       let content = msg.parts[0]?.text || '';
       if (role === 'User' && content.includes('User Question:')) {
-         content = extractUserQuestion(content);
+        content = extractUserQuestion(content);
       }
       conversationText += `${role}: ${content}\n\n`;
     }
 
-    const summary = await provider.generateSummary(state.userApiKey, state.userModel, conversationText);
+    const isOllama = state.userModel.startsWith('ollama');
+    const providerKey = isOllama ? state.ollamaUrl : state.userApiKey;
+
+    const summary = await provider.generateSummary(providerKey, state.userModel, conversationText);
 
     tab.condensedSummary = summary;
-    
+
     // Mark as compacted
     for (const msg of messagesToSummarize) {
       msg.compacted = true;
     }
-    
+
     saveTabsToStorage();
     showToast("Background history compaction completed.");
 
@@ -393,7 +407,7 @@ function updateUsageHeader() {
     const totalK = (state.usage.totalTokens / 1000).toFixed(1);
     const currentTab = getActiveTab();
     const tabTotalK = currentTab && currentTab.usage ? (currentTab.usage.totalTokens / 1000).toFixed(1) : '0.0';
-    
+
     headerUsage.innerText = `${totalK}k Overall • ${tabTotalK}k Tab`;
     headerUsage.title = `OVERALL: ${state.usage.totalTokens} | TAB: ${currentTab && currentTab.usage ? currentTab.usage.totalTokens : 0}`;
   }
@@ -415,7 +429,7 @@ function reconstructChatFromHistory() {
     } else {
       const isUser = msg.role === 'user';
       const content = isUser ? extractUserQuestion(msg.parts[0].text) : msg.parts[0].text;
-      appendMessage(isUser ? 'user' : 'AI', marked.parse(content), index, msg.videoData, msg.usage, msg.contextSummary);
+      appendMessage(isUser ? 'user' : 'AI', marked.parse(content), index, msg.videoData, msg.usage, msg.contextSummary, msg.thought);
     }
   });
   scrollToBottom();
@@ -1652,7 +1666,7 @@ elements.chatHistory.addEventListener('click', (e) => {
     if (newText.trim()) {
       const currentTab = getActiveTab();
       currentTab.history = currentTab.history.slice(0, idx);
-      
+
       // Reset compaction state on branch edit
       currentTab.condensedSummary = "";
       currentTab.history.forEach(m => m.compacted = false);
@@ -1675,11 +1689,11 @@ elements.chatHistory.addEventListener('click', (e) => {
       if (lastUserMsg && lastUserMsg.role === 'user') {
         const question = extractUserQuestion(lastUserMsg.parts[0].text);
         currentTab.history = currentTab.history.slice(0, idx - 1);
-        
+
         // Reset compaction state on retry branch
         currentTab.condensedSummary = "";
         currentTab.history.forEach(m => m.compacted = false);
-        
+
         saveTabsToStorage();
         reconstructChatFromHistory();
         sendMessage(question);
@@ -2005,7 +2019,13 @@ elements.saveSettingsBtn.addEventListener('click', () => {
     elements.apiKeyInput.value,
     elements.modelNameSelect.value,
     elements.themeSelect.value,
-    elements.themeColorInput.value
+    elements.themeColorInput.value,
+    elements.gcloudApiKeyInput.value,
+    elements.gcloudRegionInput.value,
+    elements.gcloudProjectIdInput.value,
+    elements.ttsModelSelect.value,
+    elements.ollamaUrlInput.value,
+    elements.ollamaModelInput.value
   );
   applyTheme(state.userTheme);
   applyThemeColor(state.userThemeColor);

@@ -4,6 +4,8 @@
  * Google Generative AI streaming API.
  */
 
+const baseUrl = 'https://generativelanguage.googleapis.com/v1beta';
+
 export const geminiProvider = {
   /**
    * What: Generates a streaming response from the Gemini API using native fetch.
@@ -12,13 +14,13 @@ export const geminiProvider = {
    *      an array of parts (text + inlineData for images).
    */
   async *streamGenerateContent(apiKey, model, history, promptParts, systemInstruction) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?key=${apiKey}`;
+    const url = `${baseUrl}/models/${model}:streamGenerateContent?key=${apiKey}`;
     const sanitizedHistory = history.map(msg => ({
       role: msg.role,
       parts: msg.parts
     }));
     const contents = [...sanitizedHistory, { role: "user", parts: promptParts }];
-    
+
     const body = { contents };
     if (systemInstruction) {
       body.system_instruction = {
@@ -37,7 +39,7 @@ export const geminiProvider = {
       try {
         const rawData = await response.json();
         const errorData = Array.isArray(rawData) ? rawData[0]?.error : rawData.error;
-        
+
         if (errorData) {
           // Specific handling for rate limits (429)
           if (response.status === 429) {
@@ -64,11 +66,11 @@ export const geminiProvider = {
       if (done) break;
 
       buffer += decoder.decode(value, { stream: true });
-      
+
       // Attempt to find valid JSON blocks in the buffer
       let startBracket = buffer.indexOf('[');
       let endBracket = buffer.lastIndexOf(']');
-      
+
       if (startBracket !== -1 && endBracket !== -1) {
         const jsonStr = buffer.substring(startBracket, endBracket + 1);
         try {
@@ -76,7 +78,7 @@ export const geminiProvider = {
           for (const chunk of chunks) {
             const text = chunk.candidates?.[0]?.content?.parts?.[0]?.text;
             const usage = chunk.usageMetadata;
-            
+
             if (text || usage) {
               yield { text, usage };
             }
@@ -94,8 +96,8 @@ export const geminiProvider = {
    * Useful for large videos that exceed inline limits.
    */
   async uploadFile(apiKey, file, onProgress) {
-    const startUrl = `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${apiKey}`;
-    
+    const startUrl = `${baseUrl}/upload/v1beta/files?key=${apiKey}`;
+
     // 1. Initial request to get upload URL
     const startResponse = await fetch(startUrl, {
       method: 'POST',
@@ -119,7 +121,7 @@ export const geminiProvider = {
       xhr.open('POST', uploadUrl);
       xhr.setRequestHeader('X-Goog-Upload-Offset', '0');
       xhr.setRequestHeader('X-Goog-Upload-Command', 'upload, finalize');
-      
+
       if (onProgress) {
         xhr.upload.onprogress = (e) => {
           if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
@@ -143,8 +145,8 @@ export const geminiProvider = {
    */
   async getFileStatus(apiKey, fileUri) {
     const fileId = fileUri.split('/').pop();
-    const url = `https://generativelanguage.googleapis.com/v1beta/files/${fileId}?key=${apiKey}`;
-    
+    const url = `${baseUrl}/files/${fileId}?key=${apiKey}`;
+
     const response = await fetch(url);
     if (!response.ok) throw new Error("Failed to fetch file status.");
     return await response.json();
@@ -154,7 +156,7 @@ export const geminiProvider = {
    * Lists all files uploaded to the Gemini API.
    */
   async listFiles(apiKey) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/files?key=${apiKey}`;
+    const url = `${baseUrl}/files?key=${apiKey}`;
     const response = await fetch(url);
     if (!response.ok) throw new Error("Failed to list files.");
     const data = await response.json();
@@ -166,7 +168,7 @@ export const geminiProvider = {
    */
   async deleteFile(apiKey, fileUri) {
     const fileId = fileUri.split('/').pop();
-    const url = `https://generativelanguage.googleapis.com/v1beta/files/${fileId}?key=${apiKey}`;
+    const url = `${baseUrl}/files/${fileId}?key=${apiKey}`;
     const response = await fetch(url, { method: 'DELETE' });
     if (!response.ok) throw new Error("Failed to delete file.");
     return true;
@@ -177,9 +179,9 @@ export const geminiProvider = {
    * Used for background history compaction.
    */
   async generateSummary(apiKey, model, textToSummarize) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    const url = `${baseUrl}/models/${model}:generateContent?key=${apiKey}`;
     const prompt = `Summarize the following conversation history concisely, preserving all key facts, decisions, and context. Do not omit crucial details. The summary should be written so that an AI reading it later will understand the full context of what has happened so far.\n\nConversation History:\n${textToSummarize}`;
-    
+
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

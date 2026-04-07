@@ -44,6 +44,26 @@ function renderMath(text) {
   return processed;
 }
 
+/**
+ * Renders a collapsible thought section for Ollama/DeepSeek models.
+ */
+function renderThought(thought) {
+  if (!thought) return '';
+  return `
+    <details class="thought-section">
+      <summary class="thought-summary">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="16" x2="12" y2="12"></line>
+          <line x1="12" y1="8" x2="12.01" y2="8"></line>
+        </svg>
+        <span>AI Reasoning</span>
+      </summary>
+      <div class="thought-content">${renderMath(marked.parse(thought))}</div>
+    </details>
+  `;
+}
+
 // Configure Marked with modern use() API
 marked.use({
   breaks: true,
@@ -380,12 +400,14 @@ export function clearWelcomeCard() {
  * Now supports optional video attachments for persistence.
  * @returns {HTMLElement} The message container
  */
-export function appendMessage(sender, htmlContent, index, videoData, usage, contextSummary) {
+export function appendMessage(sender, htmlContent, index, videoData, usage, contextSummary, thought) {
   clearWelcomeCard();
   const isAI = sender === 'AI';
   const container = document.createElement('div');
   container.className = `message ${isAI ? 'ai' : 'user'}`;
   if (index !== undefined) container.setAttribute('data-index', index);
+
+  const thoughtHtml = (isAI && thought) ? renderThought(thought) : '';
 
   let videoHtml = '';
   // Only show video in the user's prompt message to avoid redundancy
@@ -454,6 +476,7 @@ export function appendMessage(sender, htmlContent, index, videoData, usage, cont
     <div class="message-content">
       ${videoHtml}
       ${contextHtml}
+      ${thoughtHtml}
       <div class="message-text">${htmlContent}</div>
       ${usageHtml}
     </div>
@@ -508,14 +531,15 @@ export function appendStreamingMessage(index) {
   smartScroll();
 
   return {
-    update: (markdownText) => {
+    update: (markdownText, currentThought) => {
       if (contentDiv.classList.contains('is-thinking')) {
         contentDiv.classList.remove('is-thinking');
       }
-      contentDiv.innerHTML = renderMath(marked.parse(markdownText));
+      const thoughtHtml = currentThought ? renderThought(currentThought) : '';
+      contentDiv.innerHTML = thoughtHtml + renderMath(marked.parse(markdownText));
       smartScroll();
     },
-    finalize: (finalText, usage) => {
+    finalize: (finalText, usage, finalThought) => {
       container.classList.remove('streaming');
       contentDiv.classList.remove('is-thinking');
       
@@ -524,7 +548,8 @@ export function appendStreamingMessage(index) {
         usageHtml = `<div class="message-usage" title="Input: ${usage.promptTokenCount} | Output: ${usage.candidatesTokenCount}">${usage.totalTokenCount} tokens</div>`;
       }
 
-      contentDiv.innerHTML = renderMath(marked.parse(finalText)) + usageHtml;
+      const thoughtHtml = finalThought ? renderThought(finalThought) : '';
+      contentDiv.innerHTML = thoughtHtml + renderMath(marked.parse(finalText)) + usageHtml;
       renderCharts(contentDiv);
       renderDiagrams(contentDiv);
       smartScroll();
