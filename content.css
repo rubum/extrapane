@@ -31,3 +31,39 @@ body.extrapane-video-picker-mode .panelat-highlight-hover {
   box-shadow: 0 0 20px 8px rgba(251, 191, 36, 0.3) !important;
   z-index: 2147483647 !important;
 }
+body.extrapane-clipping-mode {
+  cursor: crosshair !important;
+  user-select: none !important;
+}
+
+.extrapane-clipping-overlay {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  background: rgba(0, 0, 0, 0.4) !important;
+  z-index: 2147483640 !important;
+  pointer-events: auto !important;
+}
+
+.extrapane-clipping-box {
+  position: fixed !important;
+  border: 2px solid var(--extrapane-theme-color, #00d2ff) !important;
+  background: transparent !important;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.4) !important;
+  z-index: 2147483641 !important;
+  pointer-events: none !important;
+}
+
+.extrapane-clipping-info {
+  position: absolute !important;
+  bottom: -30px !important;
+  right: 0 !important;
+  background: var(--extrapane-theme-color, #00d2ff) !important;
+  color: white !important;
+  font-size: 12px !important;
+  padding: 2px 6px !important;
+  border-radius: 4px !important;
+  font-family: sans-serif !important;
+}

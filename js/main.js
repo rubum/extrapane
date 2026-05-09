@@ -881,6 +881,28 @@ function extractUserQuestion(promptText) {
   return promptText;
 }
 
+/**
+ * What: Captures the visible area of the current tab as a screenshot.
+ * Why: Quick way for users to provide visual context to the AI.
+ */
+async function captureCurrentTabScreenshot() {
+  state.isClipping = !state.isClipping;
+  updateClippingUI();
+
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (tabs[0]?.id) {
+      sendMessageToTab(tabs[0].id, {
+        type: state.isClipping ? "START_CLIP" : "STOP_SELECTION"
+      });
+    }
+  });
+}
+
+function updateClippingUI() {
+  elements.screenshotBtn.classList.toggle('active', state.isClipping);
+  elements.inputWrapper.classList.toggle('extracting', state.isClipping);
+}
+
 // --- Event Listeners ---
 
 elements.sendBtn.addEventListener('click', () => sendMessage(elements.chatInput.value));
@@ -894,6 +916,7 @@ elements.chatInput.addEventListener('keydown', (e) => {
 elements.newTabBtn.addEventListener('click', createTab);
 elements.extractBtn.addEventListener('click', toggleExtraction);
 elements.extractPdfBtn.addEventListener('click', extractCurrentPagePdf);
+elements.screenshotBtn.addEventListener('click', () => captureCurrentTabScreenshot());
 elements.webcamBtn.addEventListener('click', () => WebcamModal.open());
 elements.uploadBtn.addEventListener('click', () => elements.fileInput.click());
 elements.fileInput.addEventListener('change', handleFileSelect);
@@ -1158,6 +1181,8 @@ async function extractCurrentPagePdf() {
   });
 }
 
+
+
 async function processFile(file) {
   const data = {
     tag: 'FILE',
@@ -1332,7 +1357,9 @@ function injectAndRetry(tabId, message, callback) {
 
 function resetSelectionState() {
   state.isExtracting = false;
+  state.isClipping = false;
   elements.extractBtn.classList.remove('active');
+  elements.screenshotBtn.classList.remove('active');
   elements.inputWrapper.classList.remove('extracting');
 }
 
@@ -1342,10 +1369,11 @@ chrome.runtime.onMessage.addListener((request) => {
     case 'ELEMENT_SELECTED':
       addContext(request.data);
       break;
+    case 'CLIP_SELECTED':
+      handleClipSelection(request.data);
+      break;
     case 'SELECTION_CANCELLED':
-      state.isExtracting = false;
-      elements.extractBtn.classList.remove('active');
-      elements.inputWrapper.classList.remove('extracting');
+      resetSelectionState();
       break;
   }
 });
@@ -2058,4 +2086,65 @@ elements.chatInput.addEventListener('input', () => {
   elements.chatInput.style.height = 'auto';
   elements.chatInput.style.height = (elements.chatInput.scrollHeight) + 'px';
 });
+
+/** 
+ * Handles the completion of a clip selection. 
+ * Captures the tab, crops the image, and adds to context.
+ */
+async function handleClipSelection(rect) {
+  chrome.tabs.captureVisibleTab(null, { format: 'jpeg', quality: 90 }, async (dataUrl) => {
+    if (chrome.runtime.lastError || !dataUrl) {
+      showToast("Failed to capture tab for clipping.");
+      resetSelectionState();
+      return;
+    }
+
+    try {
+      const croppedDataUrl = await cropImage(dataUrl, rect);
+      const processed = await resizeImage(croppedDataUrl);
+      
+      addContext({
+        tag: 'SCREENSHOT_CLIP',
+        name: `Clip ${new Date().toLocaleTimeString()}`,
+        base64Images: [{
+          base64: processed.base64,
+          mimeType: processed.mimeType,
+          alt: 'Clipped Region'
+        }]
+      });
+      showToast("Region clipped and added!");
+    } catch (err) {
+      console.error("Clipping error:", err);
+      showToast("Error processing clip.");
+    } finally {
+      resetSelectionState();
+    }
+  });
+}
+
+async function cropImage(dataUrl, rect) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        const dpr = rect.dpr || 1;
+        
+        canvas.width = rect.width * dpr;
+        canvas.height = rect.height * dpr;
+        
+        ctx.drawImage(
+          img,
+          rect.x * dpr, rect.y * dpr, rect.width * dpr, rect.height * dpr,
+          0, 0, rect.width * dpr, rect.height * dpr
+        );
+        
+        resolve(canvas.toDataURL('image/jpeg', 0.95));
+      } catch (e) { reject(e); }
+    };
+    img.onerror = () => reject(new Error("Failed to load image for cropping"));
+    img.src = dataUrl;
+  });
+}
 

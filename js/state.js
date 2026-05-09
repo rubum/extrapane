@@ -8,6 +8,7 @@ export const state = {
   tabs: [],               // Array of { id, title, history, contexts }
   activeTabId: null,      // Currently selected tab ID
   isExtracting: false,     // Toggles select-to-extract mode (DOM)
+  isClipping: false,       // Toggles snap-to-capture mode (Screenshot)
   userApiKey: '',
   ollamaUrl: 'http://localhost:11434',
   ollamaModel: 'gemma4:latest',

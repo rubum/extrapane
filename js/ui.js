@@ -10,6 +10,7 @@ export const elements = {
   sendBtn: document.getElementById('sendBtn'),
   extractBtn: document.getElementById('extractBtn'),
   extractPdfBtn: document.getElementById('extractPdfBtn'),
+  screenshotBtn: document.getElementById('screenshotBtn'),
   webcamBtn: document.getElementById('webcamBtn'),
   contextContainer: document.getElementById('contextContainer'),
   extractionLoader: document.getElementById('extraction-loader'),

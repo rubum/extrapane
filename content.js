@@ -5,7 +5,12 @@
  */
 
 let isSelectionMode = false;
+let isClippingMode = false;
 let currentHighlightedElement = null;
+
+let clippingOverlay = null;
+let clippingBox = null;
+let clipStartX, clipStartY;
 
 // Apply theme color dynamically
 function applyContentThemeColor(hex) {
@@ -43,8 +48,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === 'START_SELECTION') {
     startSelectionMode();
+  } else if (message.type === 'START_CLIP') {
+    startClippingMode();
   } else if (message.type === 'STOP_SELECTION') {
     stopSelectionMode();
+    stopClippingMode();
   } else if (message.type === 'GET_PAGE_PDFS') {
     const pdfSelector = 'embed[type*="pdf"], iframe[src*=".pdf"], object[type*="pdf"], a[href*=".pdf"], iframe[type="application/pdf"]';
     let pdfEl = document.querySelector(pdfSelector);
@@ -293,4 +301,107 @@ function handleClick(e) {
   });
 
   stopSelectionMode();
+}
+
+/** --- Clipping (Screenshot Cropping) --- **/
+
+function startClippingMode() {
+  if (isClippingMode) return;
+  isClippingMode = true;
+  document.body.classList.add('extrapane-clipping-mode');
+
+  clippingOverlay = document.createElement('div');
+  clippingOverlay.className = 'extrapane-clipping-overlay';
+  document.body.appendChild(clippingOverlay);
+
+  clippingBox = document.createElement('div');
+  clippingBox.className = 'extrapane-clipping-box';
+  clippingBox.style.display = 'none';
+  document.body.appendChild(clippingBox);
+
+  clippingOverlay.addEventListener('mousedown', handleClipMouseDown);
+  window.addEventListener('keydown', handleClipKeyDown);
+}
+
+function stopClippingMode() {
+  isClippingMode = false;
+  document.body.classList.remove('extrapane-clipping-mode');
+
+  if (clippingOverlay) {
+    clippingOverlay.remove();
+    clippingOverlay = null;
+  }
+  if (clippingBox) {
+    clippingBox.remove();
+    clippingBox = null;
+  }
+
+  clippingOverlay?.removeEventListener('mousedown', handleClipMouseDown);
+  window.removeEventListener('mousemove', handleClipMouseMove);
+  window.removeEventListener('mouseup', handleClipMouseUp);
+  window.removeEventListener('keydown', handleClipKeyDown);
+}
+
+function handleClipMouseDown(e) {
+  if (e.button !== 0) return; // Left click only
+  clipStartX = e.clientX;
+  clipStartY = e.clientY;
+
+  clippingBox.style.left = `${clipStartX}px`;
+  clippingBox.style.top = `${clipStartY}px`;
+  clippingBox.style.width = '0px';
+  clippingBox.style.height = '0px';
+  clippingBox.style.display = 'block';
+
+  window.addEventListener('mousemove', handleClipMouseMove);
+  window.addEventListener('mouseup', handleClipMouseUp);
+}
+
+function handleClipMouseMove(e) {
+  const currentX = e.clientX;
+  const currentY = e.clientY;
+
+  const left = Math.min(clipStartX, currentX);
+  const top = Math.min(clipStartY, currentY);
+  const width = Math.abs(clipStartX - currentX);
+  const height = Math.abs(clipStartY - currentY);
+
+  clippingBox.style.left = `${left}px`;
+  clippingBox.style.top = `${top}px`;
+  clippingBox.style.width = `${width}px`;
+  clippingBox.style.height = `${height}px`;
+
+  clippingBox.innerHTML = `<div class="extrapane-clipping-info">${Math.round(width)} x ${Math.round(height)}</div>`;
+}
+
+function handleClipMouseUp(e) {
+  window.removeEventListener('mousemove', handleClipMouseMove);
+  window.removeEventListener('mouseup', handleClipMouseUp);
+
+  const rect = clippingBox.getBoundingClientRect();
+  if (rect.width < 5 || rect.height < 5) {
+    clippingBox.style.display = 'none';
+    return;
+  }
+
+  // Send coordinates to sidepanel
+  safeSendMessage({
+    type: 'CLIP_SELECTED',
+    data: {
+      x: rect.left,
+      y: rect.top,
+      width: rect.width,
+      height: rect.height,
+      dpr: window.devicePixelRatio || 1
+    }
+  });
+
+  stopClippingMode();
+}
+
+function handleClipKeyDown(e) {
+  if (e.key === 'Escape') {
+    stopClippingMode();
+    safeSendMessage({ type: 'SELECTION_CANCELLED' });
+  }
 }
