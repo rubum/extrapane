@@ -45,6 +45,32 @@ function renderMath(text) {
 }
 
 /**
+ * Preprocesses AI response text to handle literal '\n\n' or '\n' sequences.
+ * It splits by code blocks and inline code to prevent altering code blocks.
+ */
+export function preprocessResponse(text) {
+  if (typeof text !== 'string') return text;
+  
+  // Split by triple backticks to identify code blocks
+  const parts = text.split('```');
+  for (let i = 0; i < parts.length; i++) {
+    // Even indices are outside of code blocks
+    if (i % 2 === 0) {
+      // Split by single backticks to identify inline code
+      const subparts = parts[i].split('`');
+      for (let j = 0; j < subparts.length; j++) {
+        // Even indices are outside of inline code
+        if (j % 2 === 0) {
+          subparts[j] = subparts[j].replace(/\\n\\n/g, '\n\n').replace(/\\n/g, '\n');
+        }
+      }
+      parts[i] = subparts.join('`');
+    }
+  }
+  return parts.join('```');
+}
+
+/**
  * Renders a collapsible thought section for Ollama/DeepSeek models.
  */
 function renderThought(thought) {
@@ -59,7 +85,7 @@ function renderThought(thought) {
         </svg>
         <span>AI Reasoning</span>
       </summary>
-      <div class="thought-content">${renderMath(marked.parse(thought))}</div>
+      <div class="thought-content">${renderMath(marked.parse(preprocessResponse(thought)))}</div>
     </details>
   `;
 }
@@ -536,7 +562,7 @@ export function appendStreamingMessage(index) {
         contentDiv.classList.remove('is-thinking');
       }
       const thoughtHtml = currentThought ? renderThought(currentThought) : '';
-      contentDiv.innerHTML = thoughtHtml + renderMath(marked.parse(markdownText));
+      contentDiv.innerHTML = thoughtHtml + renderMath(marked.parse(preprocessResponse(markdownText)));
       smartScroll();
     },
     finalize: (finalText, usage, finalThought) => {
@@ -549,7 +575,7 @@ export function appendStreamingMessage(index) {
       }
 
       const thoughtHtml = finalThought ? renderThought(finalThought) : '';
-      contentDiv.innerHTML = thoughtHtml + renderMath(marked.parse(finalText)) + usageHtml;
+      contentDiv.innerHTML = thoughtHtml + renderMath(marked.parse(preprocessResponse(finalText))) + usageHtml;
       renderCharts(contentDiv);
       renderDiagrams(contentDiv);
       smartScroll();
@@ -653,7 +679,7 @@ export function appendProgressMessage(sender, taskName, videoData, taskId, tabId
       // Add Result
       const responseContent = document.createElement('div');
       responseContent.className = 'response-text';
-      responseContent.innerHTML = renderMath(marked.parse(finalText)) + usageHtml;
+      responseContent.innerHTML = renderMath(marked.parse(preprocessResponse(finalText))) + usageHtml;
       contentDiv.appendChild(responseContent);
 
       // Convert history entry to a normal message

@@ -21,7 +21,8 @@ import {
   showWelcomeMessage,
   renderCharts,
   renderDiagrams,
-  clearWelcomeCard
+  clearWelcomeCard,
+  preprocessResponse
 } from './chat.js';
 import { VideoProcessor, VideoAnalysisModal } from './video.js';
 import { initDB, listMedia, deleteMedia, getMedia, getStorageStats } from './mediaStore.js';
@@ -429,7 +430,8 @@ function reconstructChatFromHistory() {
     } else {
       const isUser = msg.role === 'user';
       const content = isUser ? extractUserQuestion(msg.parts[0].text) : msg.parts[0].text;
-      appendMessage(isUser ? 'user' : 'AI', marked.parse(content), index, msg.videoData, msg.usage, msg.contextSummary, msg.thought);
+      const htmlContent = isUser ? marked.parse(content) : marked.parse(preprocessResponse(content));
+      appendMessage(isUser ? 'user' : 'AI', htmlContent, index, msg.videoData, msg.usage, msg.contextSummary, msg.thought);
     }
   });
   scrollToBottom();
@@ -1743,7 +1745,7 @@ function openCanvas(title, html) {
 
   // If content doesn't seem to be HTML, parse it as Markdown
   if (!content.trim().startsWith('<')) {
-    content = marked.parse(content);
+    content = marked.parse(preprocessResponse(content));
   }
 
   const tailwindUrl = chrome.runtime.getURL('lib/tailwind.min.js');
