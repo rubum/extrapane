@@ -25,6 +25,7 @@ import {
   preprocessResponse
 } from './chat.js';
 import { VideoProcessor, VideoAnalysisModal } from './video.js';
+import { AudioAnalysisModal } from './audio.js';
 import { initDB, listMedia, deleteMedia, getMedia, getStorageStats } from './mediaStore.js';
 import { speakText, stopSpeech } from './tts.js';
 
@@ -47,7 +48,10 @@ loadSettings((loadedState) => {
   if (loadedState.userModel) elements.modelNameSelect.value = loadedState.userModel;
   if (loadedState.userTheme) {
     elements.themeSelect.value = loadedState.userTheme;
-    applyTheme(loadedState.userTheme);
+    if (loadedState.userThemeBgColor && elements.themeBgColorInput) {
+      elements.themeBgColorInput.value = loadedState.userThemeBgColor;
+    }
+    applyTheme(loadedState.userTheme, loadedState.userThemeBgColor);
   }
   if (loadedState.userThemeColor) {
     elements.themeColorInput.value = loadedState.userThemeColor;
@@ -587,10 +591,10 @@ const MediaLibraryModal = {
   close() {
     elements.mediaLibraryModal.classList.add('hidden');
     elements.librarySearch.value = '';
-    // Pause all playing videos to release resources
-    document.querySelectorAll('.feed-video').forEach(video => {
-      video.pause();
-      if (video.src) URL.revokeObjectURL(video.src);
+    // Pause all playing videos and audios to release resources
+    document.querySelectorAll('.feed-video, .feed-audio').forEach(media => {
+      media.pause();
+      if (media.src) URL.revokeObjectURL(media.src);
     });
   },
 
@@ -650,20 +654,35 @@ const MediaLibraryModal = {
       const name = isLocal ? (item.name || item.id) : (item.displayName || id.split('/').pop());
       const size = isLocal ? (item.size / 1024 / 1024).toFixed(1) : (item.sizeBytes / 1024 / 1024).toFixed(1);
       const date = isLocal ? new Date(item.timestamp).toLocaleDateString() : 'Gemini Cloud';
+      const isAudio = isLocal ? (item.type && item.type.startsWith('audio/')) : (item.mimeType && item.mimeType.startsWith('audio/'));
 
       return `
         <div class="feed-card" data-id="${id}">
           <div class="feed-video-container">
             ${isLocal
-          ? `<video class="feed-video" loop muted data-local-id="${id}" poster="img/video-placeholder.png"></video>`
-          : `
+          ? (isAudio
+             ? `<div class="audio-card-placeholder">
+                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle>
+                  </svg>
+                  <audio class="feed-audio" data-local-id="${id}"></audio>
+                </div>`
+             : `<video class="feed-video" loop muted data-local-id="${id}" poster="img/video-placeholder.png"></video>`)
+          : (isAudio
+             ? `<div class="audio-card-placeholder">
+                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle>
+                  </svg>
+                  <p>Cloud Audio</p>
+                </div>`
+             : `
                 <div class="video-placeholder">
                   <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line>
                   </svg>
                   <p>Cloud Asset</p>
                 </div>
-              `
+              `)
         }
             <div class="feed-card-overlay">
               <div class="overlay-top">
@@ -725,23 +744,23 @@ const MediaLibraryModal = {
 
     // Attach hover listeners for autoplay
     document.querySelectorAll('.feed-card').forEach(card => {
-      const video = card.querySelector('.feed-video');
-      if (!video) return;
+      const media = card.querySelector('.feed-video') || card.querySelector('.feed-audio');
+      if (!media) return;
 
       const ppBtn = card.querySelector('.play-pause-btn');
       const muteBtn = card.querySelector('.mute-btn');
       const seekerFill = card.querySelector('.seeker-fill');
 
-      video.addEventListener('play', () => {
+      media.addEventListener('play', () => {
         ppBtn.querySelector('.play-icon').classList.add('hidden');
         ppBtn.querySelector('.pause-icon').classList.remove('hidden');
       });
-      video.addEventListener('pause', () => {
+      media.addEventListener('pause', () => {
         ppBtn.querySelector('.play-icon').classList.remove('hidden');
         ppBtn.querySelector('.pause-icon').classList.add('hidden');
       });
-      video.addEventListener('volumechange', () => {
-        if (video.muted) {
+      media.addEventListener('volumechange', () => {
+        if (media.muted) {
           muteBtn.querySelector('.volume-up-icon').classList.add('hidden');
           muteBtn.querySelector('.volume-mute-icon').classList.remove('hidden');
         } else {
@@ -749,15 +768,15 @@ const MediaLibraryModal = {
           muteBtn.querySelector('.volume-mute-icon').classList.add('hidden');
         }
       });
-      video.addEventListener('timeupdate', () => {
-        const progress = (video.currentTime / video.duration) * 100;
+      media.addEventListener('timeupdate', () => {
+        const progress = (media.currentTime / media.duration) * 100;
         seekerFill.style.width = `${progress}%`;
       });
 
-      card.addEventListener('mouseenter', () => video.play().catch(() => { }));
+      card.addEventListener('mouseenter', () => media.play().catch(() => { }));
       card.addEventListener('mouseleave', () => {
-        video.pause();
-        video.currentTime = 0;
+        media.pause();
+        media.currentTime = 0;
       });
     });
 
@@ -774,6 +793,14 @@ const MediaLibraryModal = {
       if (blob) {
         // Prevent memory leak by checking if src already exists
         if (!video.src) video.src = URL.createObjectURL(blob);
+      }
+    }
+    const audios = document.querySelectorAll('.feed-audio[data-local-id]');
+    for (const audio of audios) {
+      const id = audio.getAttribute('data-local-id');
+      const blob = await getMedia(id);
+      if (blob) {
+        if (!audio.src) audio.src = URL.createObjectURL(blob);
       }
     }
   },
@@ -810,12 +837,21 @@ const MediaLibraryModal = {
         if (item) {
           const blob = await getMedia(id);
           if (blob) {
-            const file = new File([blob], `${item.name || id}.webm`, { type: blob.type });
             this.close();
-            VideoAnalysisModal.show(file);
-            const options = await VideoAnalysisModal.getOptions();
-            if (options.action === 'analyze') {
-              startVideoAnalysis(file, { resolution: options.resolution, fps: options.fps }, options.promptText);
+            if (blob.type.startsWith('audio/')) {
+              const file = new File([blob], item.name || id, { type: blob.type });
+              AudioAnalysisModal.show(file);
+              const options = await AudioAnalysisModal.getOptions();
+              if (options.action === 'analyze') {
+                startAudioAnalysis(file, options.promptText);
+              }
+            } else {
+              const file = new File([blob], `${item.name || id}.webm`, { type: blob.type });
+              VideoAnalysisModal.show(file);
+              const options = await VideoAnalysisModal.getOptions();
+              if (options.action === 'analyze') {
+                startVideoAnalysis(file, { resolution: options.resolution, fps: options.fps }, options.promptText);
+              }
             }
           }
         }
@@ -827,14 +863,14 @@ const MediaLibraryModal = {
         mirrorBtn.classList.toggle('active');
       }
     } else if (e.target.closest('.play-pause-btn')) {
-      const video = card.querySelector('.feed-video');
-      if (video) {
-        if (video.paused) video.play();
-        else video.pause();
+      const media = card.querySelector('.feed-video') || card.querySelector('.feed-audio');
+      if (media) {
+        if (media.paused) media.play().catch(() => {});
+        else media.pause();
       }
     } else if (e.target.closest('.mute-btn')) {
-      const video = card.querySelector('.feed-video');
-      if (video) video.muted = !video.muted;
+      const media = card.querySelector('.feed-video') || card.querySelector('.feed-audio');
+      if (media) media.muted = !media.muted;
     } else if (e.target.closest('.filter-btn')) {
       const btn = e.target.closest('.filter-btn');
       const filter = btn.getAttribute('data-filter');
@@ -844,20 +880,22 @@ const MediaLibraryModal = {
         btn.classList.toggle('active');
       }
     } else if (e.target.closest('.download-btn')) {
-      const video = card.querySelector('.feed-video');
-      if (video && video.src) {
+      const media = card.querySelector('.feed-video') || card.querySelector('.feed-audio');
+      if (media && media.src) {
         const a = document.createElement('a');
-        a.href = video.src;
-        a.download = `clip-${id}.webm`;
+        a.href = media.src;
+        const item = this.items.find(i => i.id === id);
+        const isAudio = item && item.type && item.type.startsWith('audio/');
+        a.download = `clip-${id}.${isAudio ? 'mp3' : 'webm'}`;
         a.click();
       }
     } else if (e.target.closest('.video-seeker')) {
       const seeker = e.target.closest('.video-seeker');
-      const video = card.querySelector('.feed-video');
-      if (video && video.duration) {
+      const media = card.querySelector('.feed-video') || card.querySelector('.feed-audio');
+      if (media && media.duration) {
         const rect = seeker.getBoundingClientRect();
         const pos = (e.clientX - rect.left) / rect.width;
-        video.currentTime = pos * video.duration;
+        media.currentTime = pos * media.duration;
       }
     }
   },
@@ -941,21 +979,7 @@ document.querySelectorAll('.lib-tab').forEach(btn => {
   btn.addEventListener('click', () => MediaLibraryModal.setTab(btn.getAttribute('data-tab')));
 });
 
-// Settings Save Logic
-elements.saveSettingsBtn.addEventListener('click', () => {
-  saveSettings(
-    elements.apiKeyInput.value,
-    elements.modelNameSelect.value,
-    elements.themeSelect.value,
-    elements.themeColorInput.value,
-    elements.gcloudApiKeyInput.value,
-    elements.gcloudRegionInput.value,
-    elements.gcloudProjectIdInput.value,
-    elements.ttsModelSelect.value
-  );
-  elements.settingsOverlay.classList.add('hidden');
-  showToast("Settings saved successfully.");
-});
+// Settings Save Logic removed (using main save listener at bottom of file)
 
 /**
  * Enhanced file selector to handle Video optimization and 
@@ -975,6 +999,15 @@ async function handleFileSelect(e) {
 
         if (options.action === 'analyze') {
           startVideoAnalysis(file, { resolution: options.resolution, fps: options.fps }, options.promptText);
+        }
+        continue;
+      } else if (file.type.startsWith('audio/')) {
+        setExtractionLoading(false);
+        AudioAnalysisModal.show(file);
+        const options = await AudioAnalysisModal.getOptions();
+
+        if (options.action === 'analyze') {
+          startAudioAnalysis(file, options.promptText);
         }
         continue;
       } else {
@@ -1058,6 +1091,105 @@ async function startVideoAnalysis(file, choice, userPrompt) {
         { text: userPrompt }
       ];
     }
+
+    // 5. Analysis Phase (Generate Content)
+    progressUpdater.update(95, 'Generating final analysis...');
+    const stream = provider.streamGenerateContent(
+      state.userApiKey,
+      state.userModel,
+      [],
+      promptParts
+    );
+
+    let resultText = '';
+    let finalUsage = null;
+    for await (const chunk of stream) {
+      if (chunk.text) {
+        resultText += chunk.text;
+      }
+      if (chunk.usage) {
+        finalUsage = chunk.usage;
+      }
+    }
+
+    // Update state usage
+    if (finalUsage) {
+      state.usage.promptTokens += (finalUsage.promptTokenCount || 0);
+      state.usage.candidatesTokens += (finalUsage.candidatesTokenCount || 0);
+      state.usage.totalTokens += (finalUsage.totalTokenCount || 0);
+      saveUsageToStorage();
+      updateUsageHeader();
+    }
+
+    // 6. Completion
+    progressUpdater.finalize(resultText, finalUsage);
+    addNotification(`Analysis Complete: ${file.name}`, 'success');
+
+  } catch (err) {
+    progressUpdater.error(err.message);
+    addNotification(`Analysis Failed: ${file.name}`, 'error');
+  } finally {
+    state.tasks = state.tasks.filter(t => t.id !== taskId);
+  }
+}
+
+/**
+ * Core Orchestrator for Background Audio Analysis.
+ */
+async function startAudioAnalysis(file, userPrompt) {
+  const taskId = Date.now().toString();
+  const tabId = state.activeTabId;
+  const currentTab = state.tabs.find(t => t.id === tabId);
+
+  // 1. Create a progress message in the chat with an audio preview
+  let audioData = null;
+  if (file.src) {
+    audioData = { src: file.src, type: file.type };
+  } else {
+    audioData = { src: URL.createObjectURL(file), type: file.type, file: file };
+  }
+
+  // 0. Show the user's prompt in the chat history
+  const displayPrompt = userPrompt || "Analyze this audio.";
+  const userIndex = currentTab.history.length;
+  appendMessage('user', displayPrompt, userIndex, { ...audioData });
+  currentTab.history.push({ role: 'user', parts: [{ text: displayPrompt }], videoData: { ...audioData } });
+
+  const task = {
+    id: taskId,
+    tabId: tabId,
+    name: `Analyzing ${file.name}`,
+    status: 'starting',
+    progress: 0
+  };
+  state.tasks.push(task);
+  renderTabs(); // Show badge
+
+  const progressUpdater = appendProgressMessage('AI', task.name, audioData, taskId, tabId);
+
+  try {
+    const provider = getAIProvider(state.userModel);
+    
+    // Path: Upload Original (File API)
+    progressUpdater.update(10, 'Initializing secure upload...');
+    const uploadedFile = await provider.uploadFile(state.userApiKey, file, (p) => {
+      const uploadProgress = 10 + (p * 0.7); // 10% to 80%
+      progressUpdater.update(Math.round(uploadProgress), `Uploading... ${p}%`);
+    });
+
+    progressUpdater.update(85, 'AI is processing audio content...');
+    let status = 'PROCESSING';
+    while (status === 'PROCESSING') {
+      await new Promise(r => setTimeout(r, 4000));
+      const fileInfo = await provider.getFileStatus(state.userApiKey, uploadedFile.uri);
+      status = fileInfo.state;
+      if (status === 'FAILED') throw new Error("Gemini File API processing failed.");
+    }
+
+    const promptParts = [
+      { file_data: { mime_type: uploadedFile.mimeType, file_uri: uploadedFile.uri } },
+      { text: userPrompt }
+    ];
 
     // 5. Analysis Phase (Generate Content)
     progressUpdater.update(95, 'Generating final analysis...');
@@ -1622,6 +1754,78 @@ elements.chatHistory.addEventListener('click', (e) => {
   const btn = e.target.closest('button');
   const canvasCard = e.target.closest('.canvas-trigger-card');
   const ttsPlayer = e.target.closest('.tts-player');
+  const viewCanvasBtn = e.target.closest('.view-canvas-btn');
+  const downloadImageBtn = e.target.closest('.download-image-btn');
+
+  if (viewCanvasBtn) {
+    const title = viewCanvasBtn.getAttribute('data-title');
+    const base64 = viewCanvasBtn.getAttribute('data-image');
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <style>
+          body {
+            margin: 0;
+            padding: 0;
+            background: #0f111a;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            color: #fff;
+            font-family: 'Inter', sans-serif;
+          }
+          .image-wrapper {
+            max-width: 90%;
+            max-height: 80vh;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #000;
+          }
+          img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+          }
+          p {
+            margin-top: 24px;
+            font-size: 14px;
+            opacity: 0.7;
+            text-align: center;
+            max-width: 600px;
+            line-height: 1.5;
+            padding: 0 20px;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="image-wrapper">
+          <img src="data:image/jpeg;base64,${base64}" alt="${escapeHtml(title)}" />
+        </div>
+        <p>${escapeHtml(title)}</p>
+      </body>
+      </html>
+    `;
+    openCanvas(title, html);
+    return;
+  }
+
+  if (downloadImageBtn) {
+    const base64 = downloadImageBtn.getAttribute('data-image');
+    const filename = downloadImageBtn.getAttribute('data-filename') || 'image.jpg';
+    const a = document.createElement('a');
+    a.href = `data:image/jpeg;base64,${base64}`;
+    a.download = filename;
+    a.click();
+    return;
+  }
 
   if (ttsPlayer && btn) {
     if (btn.classList.contains('play-pause-btn')) {
@@ -2008,7 +2212,7 @@ elements.downloadBtn.addEventListener('click', (e) => {
 
 function closeAndRevertSettings() {
   // Revert preview if not saved
-  applyTheme(state.userTheme);
+  applyTheme(state.userTheme, state.userThemeBgColor);
   applyThemeColor(state.userThemeColor);
   elements.settingsOverlay.classList.add('hidden');
 }
@@ -2035,13 +2239,17 @@ elements.closeCanvasBtn.addEventListener('click', closeCanvas);
 elements.settingsBtn.addEventListener('click', () => {
   elements.themeSelect.value = state.userTheme;
   elements.themeColorInput.value = state.userThemeColor;
+  if (elements.themeBgColorInput) {
+    elements.themeBgColorInput.value = state.userThemeBgColor;
+  }
   elements.settingsOverlay.classList.remove('hidden');
 });
 
 elements.closeSettingsBtn.addEventListener('click', closeAndRevertSettings);
 
 // Add real-time preview listeners
-elements.themeSelect.addEventListener('change', (e) => applyTheme(e.target.value));
+elements.themeSelect.addEventListener('change', (e) => applyTheme(e.target.value, elements.themeBgColorInput.value));
+elements.themeBgColorInput.addEventListener('input', (e) => applyTheme(elements.themeSelect.value, e.target.value));
 elements.themeColorInput.addEventListener('input', (e) => applyThemeColor(e.target.value));
 
 elements.saveSettingsBtn.addEventListener('click', () => {
@@ -2050,6 +2258,7 @@ elements.saveSettingsBtn.addEventListener('click', () => {
     elements.modelNameSelect.value,
     elements.themeSelect.value,
     elements.themeColorInput.value,
+    elements.themeBgColorInput.value,
     elements.gcloudApiKeyInput.value,
     elements.gcloudRegionInput.value,
     elements.gcloudProjectIdInput.value,
@@ -2057,7 +2266,7 @@ elements.saveSettingsBtn.addEventListener('click', () => {
     elements.ollamaUrlInput.value,
     elements.ollamaModelInput.value
   );
-  applyTheme(state.userTheme);
+  applyTheme(state.userTheme, state.userThemeBgColor);
   applyThemeColor(state.userThemeColor);
   elements.settingsOverlay.classList.add('hidden');
   showToast('Settings saved!');

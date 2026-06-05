@@ -126,9 +126,19 @@ Example (Stylized):
 \`\`\`
 `;
 
+export const IMAGE_GENERATION_INSTRUCTIONS = `
+DECISION RULE: When the user asks to generate, create, draw, or paint an image, use a code block with language 'extrapane-image'. The content inside the code block MUST be the prompt for the image generation model (Imagen 3).
+Do NOT write conversational text surrounding the code block if only generating an image.
+
+Example:
+\`\`\`extrapane-image
+A majestic golden retriever wearing a space suit on Mars, digital art, highly detailed
+\`\`\`
+`;
+
 export function getSystemInstructions() {
   const currentDate = new Date().toLocaleString();
-  return `${SYSTEM_INSTRUCTIONS}\n\n${CHART_INSTRUCTIONS}\n\n${CANVAS_INSTRUCTIONS}\n\n${TTS_INSTRUCTIONS}\n\nCurrent Date and Time: ${currentDate}.`;
+  return `${SYSTEM_INSTRUCTIONS}\n\n${CHART_INSTRUCTIONS}\n\n${CANVAS_INSTRUCTIONS}\n\n${TTS_INSTRUCTIONS}\n\n${IMAGE_GENERATION_INSTRUCTIONS}\n\nCurrent Date and Time: ${currentDate}.`;
 }
 
 /**

@@ -6,6 +6,7 @@
 
 import { elements, escapeHtml, smartScroll } from './ui.js';
 import { state, saveTabsToStorage } from './state.js';
+import { getAIProvider } from './api.js';
 
 // Custom Marked Renderer for rich media and code blocks
 const renderer = new marked.Renderer();
@@ -200,6 +201,18 @@ marked.use({
                 </button>
               </div>
               <div class="tts-status">Ready to play</div>
+            </div>
+          </div>
+        `;
+      }
+
+      if (lang === 'extrapane-image') {
+        const promptText = code.trim();
+        return `
+          <div class="image-generation-card" data-prompt="${escapeHtml(promptText)}">
+            <div class="image-gen-placeholder">
+              <div class="loader-spinner"></div>
+              <span>Generating Image: "${escapeHtml(promptText.length > 65 ? promptText.substring(0, 65) + '...' : promptText)}"...</span>
             </div>
           </div>
         `;
@@ -436,9 +449,15 @@ export function appendMessage(sender, htmlContent, index, videoData, usage, cont
   const thoughtHtml = (isAI && thought) ? renderThought(thought) : '';
 
   let videoHtml = '';
-  // Only show video in the user's prompt message to avoid redundancy
+  // Only show video/audio in the user's prompt message to avoid redundancy
   if (videoData && !isAI) {
-    if (videoData.type === 'video/youtube' || videoData.src?.includes('youtube.com') || videoData.src?.includes('youtu.be')) {
+    if (videoData.type && videoData.type.startsWith('audio/')) {
+      videoHtml = `
+        <div class="message-audio-container">
+          <audio ${videoData.src ? `src="${videoData.src}"` : ''} controls></audio>
+        </div>
+      `;
+    } else if (videoData.type === 'video/youtube' || videoData.src?.includes('youtube.com') || videoData.src?.includes('youtu.be')) {
       const videoId = dataToYoutubeId(videoData.src);
       videoHtml = `
         <div class="message-video-container">
@@ -512,13 +531,15 @@ export function appendMessage(sender, htmlContent, index, videoData, usage, cont
 
   elements.chatHistory.appendChild(container);
 
-  // Re-hydrate video if needed
+  // Re-hydrate video/audio if needed
   if (videoData && videoData.mediaId && !videoData.src) {
     getMedia(videoData.mediaId).then(blob => {
       if (blob) {
         const url = URL.createObjectURL(blob);
         const video = container.querySelector('video');
         if (video) video.src = url;
+        const audio = container.querySelector('audio');
+        if (audio) audio.src = url;
       }
     });
   }
@@ -526,6 +547,7 @@ export function appendMessage(sender, htmlContent, index, videoData, usage, cont
   if (isAI) {
     renderCharts(container);
     renderDiagrams(container);
+    renderGeneratedImages(container);
   }
 
   return container;
@@ -578,6 +600,7 @@ export function appendStreamingMessage(index) {
       contentDiv.innerHTML = thoughtHtml + renderMath(marked.parse(preprocessResponse(finalText))) + usageHtml;
       renderCharts(contentDiv);
       renderDiagrams(contentDiv);
+      renderGeneratedImages(contentDiv);
       smartScroll();
     }
   };
@@ -700,6 +723,7 @@ export function appendProgressMessage(sender, taskName, videoData, taskId, tabId
       saveTabsToStorage();
       renderCharts(contentDiv);
       renderDiagrams(contentDiv);
+      renderGeneratedImages(contentDiv);
       smartScroll();
     },
     error: (errorMessage) => {
@@ -728,5 +752,65 @@ export function appendProgressMessage(sender, taskName, videoData, taskId, tabId
 function dataToYoutubeId(url) {
   const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=))([^"&?\/\s]{11})/);
   return (match && match[1]) ? match[1] : '';
+}
+
+export async function renderGeneratedImages(container) {
+  const cards = container.querySelectorAll('.image-generation-card:not([data-rendered])');
+  
+  for (const card of cards) {
+    card.setAttribute('data-rendered', 'true');
+    const promptText = card.getAttribute('data-prompt');
+    
+    try {
+      let base64Image = '';
+      
+      const isOllama = state.userModel.startsWith('ollama');
+      if (!isOllama && state.userApiKey) {
+        const provider = getAIProvider(state.userModel);
+        if (provider.generateImage) {
+          base64Image = await provider.generateImage(state.userApiKey, promptText);
+        }
+      }
+      
+      if (!base64Image) {
+        // Fallback to Pollinations.ai
+        const response = await fetch(`https://image.pollinations.ai/prompt/${encodeURIComponent(promptText)}?width=512&height=512&nologo=true`);
+        if (!response.ok) throw new Error("Failed to generate image via fallback provider.");
+        const blob = await response.blob();
+        
+        base64Image = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result.split(',')[1]);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+      }
+      
+      card.innerHTML = `
+        <div class="image-gen-result">
+          <img src="data:image/jpeg;base64,${base64Image}" alt="${escapeHtml(promptText)}" />
+          <div class="image-gen-overlay">
+            <button class="image-action-btn view-canvas-btn" data-title="${escapeHtml(promptText)}" data-image="${base64Image}">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
+              Canvas View
+            </button>
+            <button class="image-action-btn download-image-btn" data-filename="generated-image.jpg" data-image="${base64Image}">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+              Download
+            </button>
+          </div>
+        </div>
+      `;
+      smartScroll();
+    } catch (err) {
+      console.error("Image generation failed:", err);
+      card.innerHTML = `
+        <div class="error-bubble">
+          <b>Image Generation Failed:</b> ${escapeHtml(err.message)}
+        </div>
+      `;
+      smartScroll();
+    }
+  }
 }
 

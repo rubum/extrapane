@@ -6,6 +6,28 @@
 
 const baseUrl = 'https://generativelanguage.googleapis.com/v1beta';
 
+function getMimeType(file) {
+  if (file.type) {
+    if (file.type === 'audio/mp3') return 'audio/mpeg';
+    return file.type;
+  }
+  
+  const ext = file.name.split('.').pop().toLowerCase();
+  switch (ext) {
+    case 'mp3': return 'audio/mpeg';
+    case 'wav': return 'audio/wav';
+    case 'm4a': return 'audio/m4a';
+    case 'ogg': return 'audio/ogg';
+    case 'aac': return 'audio/aac';
+    case 'flac': return 'audio/flac';
+    case 'webm': return file.name.includes('audio') ? 'audio/webm' : 'video/webm';
+    case 'mp4': return 'video/mp4';
+    case 'mov': return 'video/quicktime';
+    case 'avi': return 'video/x-msvideo';
+    default: return 'application/octet-stream';
+  }
+}
+
 export const geminiProvider = {
   /**
    * What: Generates a streaming response from the Gemini API using native fetch.
@@ -96,7 +118,8 @@ export const geminiProvider = {
    * Useful for large videos that exceed inline limits.
    */
   async uploadFile(apiKey, file, onProgress) {
-    const startUrl = `${baseUrl}/upload/v1beta/files?key=${apiKey}`;
+    const startUrl = `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${apiKey}`;
+    const mimeType = getMimeType(file);
 
     // 1. Initial request to get upload URL
     const startResponse = await fetch(startUrl, {
@@ -105,13 +128,24 @@ export const geminiProvider = {
         'X-Goog-Upload-Protocol': 'resumable',
         'X-Goog-Upload-Command': 'start',
         'X-Goog-Upload-Header-Content-Length': file.size,
-        'X-Goog-Upload-Header-Content-Type': file.type,
+        'X-Goog-Upload-Header-Content-Type': mimeType,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({ file: { display_name: file.name } })
     });
 
-    if (!startResponse.ok) throw new Error("Failed to initialize upload.");
+    if (!startResponse.ok) {
+      let detail = "";
+      try {
+        const errJson = await startResponse.json();
+        detail = `: ${errJson.error?.message || JSON.stringify(errJson)}`;
+      } catch (e) {
+        try {
+          detail = `: ${await startResponse.text()}`;
+        } catch (inner) {}
+      }
+      throw new Error(`Failed to initialize upload${detail}`);
+    }
     const uploadUrl = startResponse.headers.get('x-goog-upload-url');
 
     // 2. Perform the actual upload
@@ -200,5 +234,62 @@ export const geminiProvider = {
       return data.candidates[0].content.parts[0].text;
     }
     throw new Error("Invalid response format from Gemini API");
+  },
+
+  /**
+   * Generates an image using Imagen 3 model.
+   */
+  async generateImage(apiKey, prompt) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${apiKey}`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        instances: [
+          {
+            prompt: prompt
+          }
+        ],
+        parameters: {
+          sampleCount: 1,
+          outputMimeType: 'image/jpeg',
+          aspectRatio: '1:1'
+        }
+      })
+    });
+
+    if (!response.ok) {
+      let errorMessage = `Failed to generate image (Status: ${response.status})`;
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.error?.message || errorMessage;
+      } catch (e) {
+        try {
+          const errorText = await response.text();
+          if (errorText) errorMessage = errorText;
+        } catch (inner) {}
+      }
+      throw new Error(errorMessage);
+    }
+
+    const data = await response.json();
+    
+    // Support predictions array (standard for :predict)
+    if (data.predictions && data.predictions.length > 0) {
+      const firstPrediction = data.predictions[0];
+      if (typeof firstPrediction === 'string') {
+        return firstPrediction;
+      }
+      if (firstPrediction.bytesBase64Encoded) {
+        return firstPrediction.bytesBase64Encoded;
+      }
+    }
+    
+    // Fallback/Legacy support for generatedImages just in case
+    if (data.generatedImages && data.generatedImages.length > 0) {
+      return data.generatedImages[0].image?.imageBytes || data.generatedImages[0].imageBytes;
+    }
+    
+    throw new Error("No image returned from Gemini API");
   }
 };

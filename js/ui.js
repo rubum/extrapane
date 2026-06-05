@@ -30,6 +30,8 @@ export const elements = {
   modelNameSelect: document.getElementById('modelName'),
   themeSelect: document.getElementById('themeSelect'),
   themeColorInput: document.getElementById('themeColor'),
+  themeBgColorInput: document.getElementById('themeBgColor'),
+  customBgGroup: document.getElementById('customBgGroup'),
   hljsStyle: document.getElementById('hljsStyle'),
   tabsList: document.getElementById('tabsList'),
   newTabBtn: document.getElementById('newTabBtn'),
@@ -74,6 +76,15 @@ export const elements = {
   analysisPlayPauseBtn: document.getElementById('analysisPlayPauseBtn'),
   analysisMuteBtn: document.getElementById('analysisMuteBtn'),
   analysisSeekerFill: document.querySelector('#videoAnalysisModal .seeker-fill'),
+  // Audio Analysis elements
+  audioAnalysisModal: document.getElementById('audioAnalysisModal'),
+  analysisAudioPreview: document.getElementById('analysisAudioPreview'),
+  audioFilename: document.getElementById('audioFilename'),
+  audioFilesize: document.getElementById('audioFilesize'),
+  audioAnalysisPrompt: document.getElementById('audioAnalysisPrompt'),
+  confirmAudioAnalysisBtn: document.getElementById('confirmAudioAnalysisBtn'),
+  cancelAudioAnalysisBtn: document.getElementById('cancelAudioAnalysisBtn'),
+  closeAudioAnalysisModalBtn: document.getElementById('closeAudioAnalysisModalBtn'),
   // Media Library Modal
   mediaLibraryModal: document.getElementById('mediaLibraryModal'),
   mediaGrid: document.getElementById('mediaGrid'),
@@ -84,13 +95,99 @@ export const elements = {
   clearLibraryBtn: document.getElementById('clearLibraryBtn')
 };
 
-/** Switches between light and dark themes. */
-export function applyTheme(theme) {
-  if (theme === 'dark') {
+function getBrightness(hexColor) {
+  const rgb = parseInt(hexColor.replace('#', ''), 16);
+  const r = (rgb >> 16) & 0xff;
+  const g = (rgb >> 8) & 0xff;
+  const b = (rgb >> 0) & 0xff;
+  return 0.299 * r + 0.587 * g + 0.114 * b;
+}
+
+function lightenColor(hex, percent) {
+  const num = parseInt(hex.replace("#",""), 16),
+  amt = Math.round(2.55 * (percent * 100)),
+  R = (num >> 16) + amt,
+  G = (num >> 8 & 0x00FF) + amt,
+  B = (num & 0x0000FF) + amt;
+  return "#" + (0x1000000 + (R<255?R<0?0:R:255)*0x10000 + (G<255?G<0?0:G:255)*0x100 + (B<255?B<0?0:B:255)).toString(16).slice(1);
+}
+
+function darkenColor(hex, percent) {
+  const num = parseInt(hex.replace("#",""), 16),
+  amt = Math.round(2.55 * (percent * 100)),
+  R = (num >> 16) - amt,
+  G = (num >> 8 & 0x00FF) - amt,
+  B = (num & 0x0000FF) - amt;
+  return "#" + (0x1000000 + (R<255?R<0?0:R:255)*0x10000 + (G<255?G<0?0:G:255)*0x100 + (B<255?B<0?0:B:255)).toString(16).slice(1);
+}
+
+/** Switches between light, dark, preset, and custom background themes. */
+export function applyTheme(theme, customBgColor) {
+  // Remove all previous theme classes from body
+  const themeClasses = [
+    'dark-theme', 'light-theme', 'nord-theme', 
+    'solarized-dark-theme', 'solarized-light-theme', 
+    'oled-theme', 'sepia-theme', 'custom-theme'
+  ];
+  themeClasses.forEach(cls => document.body.classList.remove(cls));
+
+  if (elements.customBgGroup) {
+    elements.customBgGroup.style.display = theme === 'custom' ? 'block' : 'none';
+  }
+
+  let isDark = false;
+
+  if (theme === 'custom' && customBgColor) {
+    document.body.classList.add('custom-theme');
+    const brightness = getBrightness(customBgColor);
+    isDark = brightness < 128;
+
+    const body = document.body;
+    body.style.setProperty('--bg-color', customBgColor);
+
+    if (isDark) {
+      body.style.setProperty('--surface-color', lightenColor(customBgColor, 0.05));
+      body.style.setProperty('--border-color', 'rgba(255, 255, 255, 0.15)');
+      body.style.setProperty('--text-main', '#cbd5e1');
+      body.style.setProperty('--text-muted', '#94a3b8');
+      body.style.setProperty('--glass-bg', darkenColor(customBgColor, 0.05) + 'dd');
+      body.style.setProperty('--glass-border', 'rgba(255, 255, 255, 0.15)');
+      body.style.setProperty('--code-bg', darkenColor(customBgColor, 0.05));
+      body.style.setProperty('--code-header', darkenColor(customBgColor, 0.02));
+      body.style.setProperty('--code-border', 'rgba(255, 255, 255, 0.15)');
+    } else {
+      body.style.setProperty('--surface-color', '#ffffff');
+      body.style.setProperty('--border-color', 'rgba(0, 0, 0, 0.08)');
+      body.style.setProperty('--text-main', '#111827');
+      body.style.setProperty('--text-muted', '#57606a');
+      body.style.setProperty('--glass-bg', lightenColor(customBgColor, 0.05) + 'dd');
+      body.style.setProperty('--glass-border', 'rgba(0, 0, 0, 0.08)');
+      body.style.setProperty('--code-bg', darkenColor(customBgColor, 0.02));
+      body.style.setProperty('--code-header', darkenColor(customBgColor, 0.05));
+      body.style.setProperty('--code-border', 'rgba(0, 0, 0, 0.08)');
+    }
+  } else {
+    // Reset any custom styles
+    const body = document.body;
+    body.style.removeProperty('--bg-color');
+    body.style.removeProperty('--surface-color');
+    body.style.removeProperty('--border-color');
+    body.style.removeProperty('--text-main');
+    body.style.removeProperty('--text-muted');
+    body.style.removeProperty('--glass-bg');
+    body.style.removeProperty('--glass-border');
+    body.style.removeProperty('--code-bg');
+    body.style.removeProperty('--code-header');
+    body.style.removeProperty('--code-border');
+
+    isDark = ['dark', 'nord', 'solarized-dark', 'oled'].includes(theme);
+    document.body.classList.add(`${theme}-theme`);
+  }
+
+  if (isDark) {
     document.body.classList.add('dark-theme');
     elements.hljsStyle.href = 'lib/highlight-dark.min.css';
   } else {
-    document.body.classList.remove('dark-theme');
     elements.hljsStyle.href = 'lib/highlight-light.min.css';
   }
 }
