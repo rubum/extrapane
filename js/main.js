@@ -22,7 +22,10 @@ import {
   renderCharts,
   renderDiagrams,
   clearWelcomeCard,
-  preprocessResponse
+  preprocessResponse,
+  appendGitHubSelectorMessage,
+  setInlineQuestionCallback,
+  renderSubConversationBox
 } from './chat.js';
 import { VideoProcessor, VideoAnalysisModal } from './video.js';
 import { AudioAnalysisModal } from './audio.js';
@@ -58,11 +61,20 @@ loadSettings((loadedState) => {
     applyThemeColor(loadedState.userThemeColor);
   }
 
+  const isSoundEnabled = loadedState.soundEnabled !== undefined ? loadedState.soundEnabled : true;
+  if (elements.soundEnabledInput) elements.soundEnabledInput.checked = isSoundEnabled;
+  if (elements.soundTypeSelect) elements.soundTypeSelect.value = loadedState.soundType || 'chime';
+  if (elements.soundTypeGroup) {
+    elements.soundTypeGroup.style.opacity = isSoundEnabled ? '1' : '0.5';
+    elements.soundTypeGroup.style.pointerEvents = isSoundEnabled ? 'auto' : 'none';
+  }
+
   // Initialize Persistent Media Store
   initDB().catch(err => console.error("Failed to init MediaStore:", err));
 
   renderTabs();
   updateUsageHeader();
+  setInlineQuestionCallback(handleInlineQuestionSubmit);
   const activeTab = getActiveTab();
   if (activeTab && activeTab.history.length > 0) {
     reconstructChatFromHistory();
@@ -210,43 +222,157 @@ function renderTabs() {
 
 // --- Core Logic ---
 
+/**
+ * Resolves @-mentioned media links in the user message.
+ * Fetches remote images, audio, video, PDFs, and webpage content to attach them to the request parts.
+ */
+async function resolveMentions(text) {
+  const mentionRegex = /@(https?:\/\/[^\s"',;()]+)/g;
+  const matches = [...text.matchAll(mentionRegex)];
+  const mediaList = [];
+
+  if (matches.length === 0) return mediaList;
+
+  setExtractionLoading(true);
+  showToast("Resolving media mentions...");
+
+  for (const match of matches) {
+    const url = match[1];
+    
+    // Check if YouTube URL
+    const ytId = getYouTubeId(url);
+    if (ytId) {
+      mediaList.push({
+        type: 'video/youtube',
+        src: `https://www.youtube.com/watch?v=${ytId}`,
+        youtubeId: ytId
+      });
+      continue;
+    }
+
+    // Direct Media / Document / Web link
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        showToast(`Could not fetch link: ${url}`);
+        continue;
+      }
+      
+      const contentType = response.headers.get('content-type') || '';
+      
+      if (contentType.startsWith('image/')) {
+        const blob = await response.blob();
+        const base64Data = await fileToBase64(blob);
+        mediaList.push({
+          type: contentType,
+          src: url,
+          base64: base64Data.split(',')[1],
+          isImage: true
+        });
+      } else if (contentType.startsWith('audio/') || contentType.startsWith('video/')) {
+        const blob = await response.blob();
+        if (blob.size < 15 * 1024 * 1024) { // < 15MB inline limit
+          const base64Data = await fileToBase64(blob);
+          mediaList.push({
+            type: contentType,
+            src: url,
+            base64: base64Data.split(',')[1],
+            isInline: true
+          });
+        } else {
+          // Large audio/video upload via Files API (Gemini only)
+          const isOllama = state.userModel.startsWith('ollama');
+          if (isOllama) {
+            showToast("Warning: Local Ollama model does not support large file uploads.");
+            continue;
+          }
+          
+          showToast(`Uploading large media to Gemini: ${url.split('/').pop()}...`);
+          const filename = url.split('/').pop() || 'media';
+          const fileObj = new File([blob], filename, { type: contentType });
+          const provider = getAIProvider(state.userModel);
+          const uploadedFile = await provider.uploadFile(state.userApiKey, fileObj);
+          
+          let status = 'PROCESSING';
+          while (status === 'PROCESSING') {
+            await new Promise(r => setTimeout(r, 2000));
+            const fileInfo = await provider.getFileStatus(state.userApiKey, uploadedFile.uri);
+            status = fileInfo.state;
+            if (status === 'FAILED') throw new Error("File API processing failed.");
+          }
+          
+          mediaList.push({
+            type: contentType,
+            src: url,
+            fileUri: uploadedFile.uri,
+            isUploaded: true
+          });
+        }
+      } else if (contentType.startsWith('application/pdf')) {
+        const blob = await response.blob();
+        const base64Data = await fileToBase64(blob);
+        mediaList.push({
+          type: contentType,
+          src: url,
+          base64: base64Data.split(',')[1],
+          isPdf: true
+        });
+      } else if (contentType.includes('html') || contentType.includes('json') || contentType.startsWith('text/')) {
+        const pageText = await response.text();
+        let cleanText = pageText;
+        if (contentType.includes('html')) {
+          const doc = new DOMParser().parseFromString(pageText, 'text/html');
+          const scripts = doc.querySelectorAll('script, style');
+          scripts.forEach(s => s.remove());
+          cleanText = doc.body.textContent || doc.body.innerText || '';
+          cleanText = cleanText.replace(/\s+/g, ' ').trim(); // Normalize whitespace
+        }
+        mediaList.push({
+          type: contentType,
+          src: url,
+          text: cleanText,
+          isText: true
+        });
+      }
+    } catch (err) {
+      console.error("Failed to resolve mention:", url, err);
+      showToast(`Failed to load: ${url.split('/').pop()}`);
+    }
+  }
+
+  setExtractionLoading(false);
+  return mediaList;
+}
+
+function getYouTubeId(url) {
+  const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=))([^"&?\/\s]{11})/);
+  return (match && match[1]) ? match[1] : null;
+}
+
 /** 
  * Primary loop for sending a message. 
  * Orchestrates prompt building, UI updates, and AI streaming.
  */
-async function sendMessage(text) {
-  if (!text.trim()) return;
-
-  const currentTab = getActiveTab();
-  const promptParts = buildPrompt(text, currentTab.contexts);
-  const userIndex = currentTab.history.length;
-  const contextSummary = currentTab.contexts.map(c => ({ tag: c.tag, name: c.name }));
-  appendMessage('user', marked.parse(text), userIndex, null, null, contextSummary);
-  scrollToBottom();
-
-  const userTurn = {
-    role: "user",
-    parts: promptParts,
-    contextSummary: contextSummary
-  };
-  const systemInstruction = getSystemInstructions();
-  currentTab.history.push(userTurn);
-
-  // Optimization removed per user request to maintain UX context persistence
-  // currentTab.contexts = [];
-  // renderContextChips();
-
-  // Update tab title if it's the first message
-  if (currentTab.history.length === 1) {
-    currentTab.title = text.length > 20 ? text.substring(0, 20) + '...' : text;
-    renderTabs();
+function parseGitHubUrl(text) {
+  const match = text.match(/@(https?:\/\/github\.com\/([a-zA-Z0-9_-]+)\/([a-zA-Z0-9._-]+))/);
+  if (!match) return null;
+  const url = match[1];
+  const owner = match[2];
+  let repo = match[3];
+  
+  if (repo.includes('/')) {
+    repo = repo.split('/')[0];
   }
+  if (repo.endsWith('.git')) {
+    repo = repo.slice(0, -4);
+  }
+  return { url, owner, repo };
+}
 
-  saveTabsToStorage();
-
-  elements.chatInput.value = '';
-  elements.chatInput.style.height = 'auto';
-
+/**
+ * Streams the AI response from the selected LLM provider and updates history and token usage.
+ */
+async function streamAIResponse(promptParts, currentTab, systemInstruction) {
   let streaming;
   try {
     const provider = getAIProvider(state.userModel);
@@ -322,6 +448,9 @@ async function sendMessage(text) {
     // Trigger compaction background process
     compactHistory(currentTab.id);
 
+    // Add query complete notification
+    addNotification("Query complete", "success");
+
     // Autoplay if the message contains a TTS player
     const lastMessage = elements.chatHistory.lastElementChild;
     if (lastMessage) {
@@ -337,8 +466,207 @@ async function sendMessage(text) {
       streaming.finalize("");
     }
     showToast(`Note: ${error.message}`);
-    appendMessage('AI', `<div class="error-bubble"><b>Hold on a moment:</b> ${error.message}</div>`);
+    appendMessage('AI', `<div class="error-bubble"><b>Hold on a moment:</b> ${error.message}</div>`, undefined, null, null, null, null, `Hold on a moment: ${error.message}`);
   }
+}
+
+/** 
+ * Primary loop for sending a message. 
+ * Orchestrates prompt building, UI updates, and AI streaming.
+ */
+async function sendMessage(text) {
+  if (!text.trim()) return;
+
+  const currentTab = getActiveTab();
+
+  // Check if it is a GitHub repository mention
+  const githubInfo = parseGitHubUrl(text);
+  if (githubInfo) {
+    const { owner, repo } = githubInfo;
+    const userIndex = currentTab.history.length;
+
+    // 1. Append user's original message bubble
+    appendMessage('user', marked.parse(text), userIndex, null, null, null, null, text);
+    scrollToBottom();
+
+    currentTab.history.push({ role: 'user', parts: [{ text: text }] });
+    saveTabsToStorage();
+
+    // Update tab title if it's the first message
+    if (currentTab.history.length === 1) {
+      currentTab.title = text.length > 20 ? text.substring(0, 20) + '...' : text;
+      renderTabs();
+    }
+
+    elements.chatInput.value = '';
+    elements.chatInput.style.height = 'auto';
+
+    // 2. Append selector card placeholder
+    const aiIndex = currentTab.history.length;
+    const selector = appendGitHubSelectorMessage(aiIndex, owner, repo);
+
+    // 3. Download and extract repository zipball asynchronously
+    (async () => {
+      try {
+        selector.updateStatus("Downloading repository zipball...");
+        const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/zipball`);
+        if (!response.ok) {
+          throw new Error(`GitHub API returned status ${response.status}. Ensure the repository is public and exists.`);
+        }
+
+        selector.updateStatus("Extracting repository code files...");
+        const blob = await response.blob();
+
+        const zip = await JSZip.loadAsync(blob);
+        const fileList = [];
+        const promises = [];
+
+        zip.forEach((relativePath, zipEntry) => {
+          if (zipEntry.dir) return;
+
+          const pathLower = relativePath.toLowerCase();
+          // Filter out binary, build, locks and git folders
+          if (
+            pathLower.includes('/node_modules/') ||
+            pathLower.includes('/.git/') ||
+            pathLower.includes('/dist/') ||
+            pathLower.includes('/build/') ||
+            pathLower.includes('/package-lock.json') ||
+            pathLower.includes('/yarn.lock') ||
+            pathLower.includes('/pnpm-lock.yaml')
+          ) {
+            return;
+          }
+
+          const ext = relativePath.split('.').pop().toLowerCase();
+          const allowedExtensions = [
+            'js', 'jsx', 'ts', 'tsx', 'html', 'css', 'json', 'md', 'py', 'java', 'c', 'cpp',
+            'h', 'hpp', 'cs', 'go', 'rs', 'rb', 'php', 'sh', 'yml', 'yaml', 'toml', 'sql', 'xml'
+          ];
+          if (!allowedExtensions.includes(ext)) {
+            return;
+          }
+
+          promises.push(
+            zipEntry.async('text').then(content => {
+              const parts = relativePath.split('/');
+              parts.shift(); // Remove top level directory prefix
+              const cleanPath = parts.join('/');
+              
+              fileList.push({ path: cleanPath, content });
+            })
+          );
+        });
+
+        await Promise.all(promises);
+
+        fileList.sort((a, b) => a.path.localeCompare(b.path));
+
+        if (fileList.length === 0) {
+          throw new Error("No supported text/code files found in this repository.");
+        }
+
+        // 4. Populate checklist UI and handle analysis submission
+        selector.populateFiles(fileList, async (selectedFiles) => {
+          if (selectedFiles.length === 0) {
+            showToast("No files selected. Codebase analysis cancelled.");
+            selector.updateStatus("Analysis cancelled (no files selected).", true);
+            return;
+          }
+
+          let repoContext = `GITHUB REPOSITORY CONTEXT (${owner}/${repo}):\n\n`;
+          selectedFiles.forEach(file => {
+            repoContext += `[File: ${file.path}]\n\`\`\`\n${file.content}\n\`\`\`\n\n`;
+          });
+
+          const promptParts = buildPrompt(text, currentTab.contexts);
+          promptParts.push({ text: repoContext });
+
+          const systemInstruction = getSystemInstructions();
+          await streamAIResponse(promptParts, currentTab, systemInstruction);
+        });
+
+      } catch (err) {
+        console.error(err);
+        selector.updateStatus(err.message, true);
+        showToast(`GitHub Error: ${err.message}`);
+      }
+    })();
+
+    return;
+  }
+  
+  // 1. Resolve standard @mentions
+  let mediaList = [];
+  try {
+    mediaList = await resolveMentions(text);
+  } catch (err) {
+    console.error("Mentions resolution failed:", err);
+  }
+
+  const promptParts = buildPrompt(text, currentTab.contexts);
+
+  // 2. Append resolved mentions to promptParts
+  mediaList.forEach(media => {
+    if (media.type === 'video/youtube') {
+      promptParts.push({
+        file_data: {
+          file_uri: media.src
+        }
+      });
+    } else if (media.isInline || media.isImage || media.isPdf) {
+      promptParts.push({
+        inline_data: {
+          mime_type: media.type,
+          data: media.base64
+        }
+      });
+    } else if (media.isUploaded) {
+      promptParts.push({
+        file_data: {
+          mime_type: media.type,
+          file_uri: media.fileUri
+        }
+      });
+    } else if (media.isText) {
+      promptParts.push({
+        text: `\n\n[Content of linked page ${media.src}]:\n${media.text}\n`
+      });
+    }
+  });
+
+  const userIndex = currentTab.history.length;
+  const contextSummary = currentTab.contexts.map(c => ({ tag: c.tag, name: c.name }));
+  const videoData = mediaList.length > 0 ? mediaList : null;
+
+  appendMessage('user', marked.parse(text), userIndex, videoData, null, contextSummary, null, text);
+  scrollToBottom();
+
+  const userTurn = {
+    role: "user",
+    parts: promptParts,
+    contextSummary: contextSummary,
+    videoData: videoData
+  };
+  const systemInstruction = getSystemInstructions();
+  currentTab.history.push(userTurn);
+
+  // Optimization removed per user request to maintain UX context persistence
+  // currentTab.contexts = [];
+  // renderContextChips();
+
+  // Update tab title if it's the first message
+  if (currentTab.history.length === 1) {
+    currentTab.title = text.length > 20 ? text.substring(0, 20) + '...' : text;
+    renderTabs();
+  }
+
+  saveTabsToStorage();
+
+  elements.chatInput.value = '';
+  elements.chatInput.style.height = 'auto';
+
+  await streamAIResponse(promptParts, currentTab, systemInstruction);
 }
 
 /**
@@ -405,6 +733,76 @@ async function compactHistory(tabId) {
   }
 }
 
+/**
+ * Handles inline sub-question submission from a block-level hover trigger.
+ * Streams a brief answer in-place directly below the reference block.
+ */
+async function handleInlineQuestionSubmit(messageIndex, blockIndex, blockEl, question) {
+  const currentTab = getActiveTab();
+  
+  const placeholderAnswer = `<div class="loader-spinner" style="margin-top: 4px;"></div> <span style="font-size: 0.8rem; color: var(--text-muted);">Generating answer...</span>`;
+  const subConvBox = renderSubConversationBox(blockEl, messageIndex, blockIndex, question, placeholderAnswer, false);
+
+  try {
+    const provider = getAIProvider(state.userModel);
+    
+    // Construct context and strict brevity system instruction
+    const paragraphText = blockEl.innerText.replace(/[\n\r]+/g, ' ').trim();
+    const subSystemInstruction = `${getSystemInstructions()}\n\nCRITICAL: You are answering a specific follow-up question about a portion of your previous answer. You MUST be extremely brief and concise. Answer in exactly 1 or 2 sentences maximum. Do not exceed this length under any circumstances.`;
+
+    const promptParts = [
+      { text: `Regarding the previous statement: "${paragraphText}"\n\nFollow-up question: ${question}` }
+    ];
+
+    const historySlice = currentTab.history.slice(0, messageIndex);
+    const uncompactedHistory = historySlice.filter(m => !m.compacted);
+
+    const isOllama = state.userModel.startsWith('ollama');
+    const providerKey = isOllama ? state.ollamaUrl : state.userApiKey;
+
+    const stream = provider.streamGenerateContent(
+      providerKey,
+      state.userModel,
+      uncompactedHistory,
+      promptParts,
+      subSystemInstruction
+    );
+
+    let answerText = '';
+    const answerEl = subConvBox.querySelector('.sub-conv-answer');
+    
+    for await (const chunk of stream) {
+      if (chunk.text) {
+        answerText += chunk.text;
+        answerEl.innerHTML = marked.parse(preprocessResponse(answerText));
+        smartScroll();
+      }
+    }
+
+    // Persist sub-conversation in the history object
+    const msg = currentTab.history[messageIndex];
+    if (msg) {
+      if (!msg.subConversations) msg.subConversations = [];
+      msg.subConversations = msg.subConversations.filter(s => s.blockIndex !== blockIndex);
+      msg.subConversations.push({
+        blockIndex,
+        question,
+        answer: marked.parse(preprocessResponse(answerText)),
+        collapsed: false
+      });
+      saveTabsToStorage();
+    }
+
+    addNotification("Sub-discussion updated", "success");
+
+  } catch (err) {
+    console.error(err);
+    const answerEl = subConvBox.querySelector('.sub-conv-answer');
+    answerEl.innerHTML = `<span style="color: #ef4444; font-weight: 500;">⚠️ Error: ${err.message}</span>`;
+    showToast(`Failed to answer: ${err.message}`);
+  }
+}
+
 /** Updates the cumulative token usage display in the app header. */
 function updateUsageHeader() {
   const headerUsage = document.getElementById('headerUsage');
@@ -435,7 +833,7 @@ function reconstructChatFromHistory() {
       const isUser = msg.role === 'user';
       const content = isUser ? extractUserQuestion(msg.parts[0].text) : msg.parts[0].text;
       const htmlContent = isUser ? marked.parse(content) : marked.parse(preprocessResponse(content));
-      appendMessage(isUser ? 'user' : 'AI', htmlContent, index, msg.videoData, msg.usage, msg.contextSummary, msg.thought);
+      appendMessage(isUser ? 'user' : 'AI', htmlContent, index, msg.videoData, msg.usage, msg.contextSummary, msg.thought, content);
     }
   });
   scrollToBottom();
@@ -1039,7 +1437,7 @@ async function startVideoAnalysis(file, choice, userPrompt) {
   // 0. Show the user's prompt in the chat history
   const displayPrompt = userPrompt || "Analyze this video with the specified settings.";
   const userIndex = currentTab.history.length;
-  appendMessage('user', displayPrompt, userIndex, { ...videoData });
+  appendMessage('user', displayPrompt, userIndex, { ...videoData }, null, null, null, displayPrompt);
   currentTab.history.push({ role: 'user', parts: [{ text: displayPrompt }], videoData: { ...videoData } });
 
   const task = {
@@ -1152,7 +1550,7 @@ async function startAudioAnalysis(file, userPrompt) {
   // 0. Show the user's prompt in the chat history
   const displayPrompt = userPrompt || "Analyze this audio.";
   const userIndex = currentTab.history.length;
-  appendMessage('user', displayPrompt, userIndex, { ...audioData });
+  appendMessage('user', displayPrompt, userIndex, { ...audioData }, null, null, null, displayPrompt);
   currentTab.history.push({ role: 'user', parts: [{ text: displayPrompt }], videoData: { ...audioData } });
 
   const task = {
@@ -1233,11 +1631,102 @@ async function startAudioAnalysis(file, userPrompt) {
 }
 
 /** Notification Management */
+function playNotificationSound(typeOverride) {
+  const enabled = typeOverride !== undefined ? true : (state.soundEnabled !== undefined ? state.soundEnabled : true);
+  if (!enabled) return;
+
+  try {
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const soundType = typeOverride || state.soundType || 'chime';
+
+    if (soundType === 'beep') {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+      gain.gain.setValueAtTime(0.04, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.15);
+      osc.start(audioCtx.currentTime);
+      osc.stop(audioCtx.currentTime + 0.15);
+    } else if (soundType === 'two-tone') {
+      const osc1 = audioCtx.createOscillator();
+      const gain1 = audioCtx.createGain();
+      osc1.connect(gain1);
+      gain1.connect(audioCtx.destination);
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(880, audioCtx.currentTime);
+      gain1.gain.setValueAtTime(0.04, audioCtx.currentTime);
+      gain1.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.08);
+      osc1.start(audioCtx.currentTime);
+      osc1.stop(audioCtx.currentTime + 0.08);
+
+      setTimeout(() => {
+        try {
+          const osc2 = audioCtx.createOscillator();
+          const gain2 = audioCtx.createGain();
+          osc2.connect(gain2);
+          gain2.connect(audioCtx.destination);
+          osc2.type = 'sine';
+          osc2.frequency.setValueAtTime(1046.5, audioCtx.currentTime);
+          gain2.gain.setValueAtTime(0.04, audioCtx.currentTime);
+          gain2.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
+          osc2.start(audioCtx.currentTime);
+          osc2.stop(audioCtx.currentTime + 0.1);
+        } catch (e) {}
+      }, 80);
+    } else if (soundType === 'bounce') {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(400, audioCtx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(900, audioCtx.currentTime + 0.15);
+      gain.gain.setValueAtTime(0.04, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.15);
+      osc.start(audioCtx.currentTime);
+      osc.stop(audioCtx.currentTime + 0.15);
+    } else {
+      // default: chime
+      const osc1 = audioCtx.createOscillator();
+      const gain1 = audioCtx.createGain();
+      osc1.connect(gain1);
+      gain1.connect(audioCtx.destination);
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(523.25, audioCtx.currentTime);
+      gain1.gain.setValueAtTime(0.04, audioCtx.currentTime);
+      gain1.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.12);
+      osc1.start(audioCtx.currentTime);
+      osc1.stop(audioCtx.currentTime + 0.12);
+      
+      setTimeout(() => {
+        try {
+          const osc2 = audioCtx.createOscillator();
+          const gain2 = audioCtx.createGain();
+          osc2.connect(gain2);
+          gain2.connect(audioCtx.destination);
+          osc2.type = 'sine';
+          osc2.frequency.setValueAtTime(659.25, audioCtx.currentTime);
+          gain2.gain.setValueAtTime(0.04, audioCtx.currentTime);
+          gain2.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.18);
+          osc2.start(audioCtx.currentTime);
+          osc2.stop(audioCtx.currentTime + 0.18);
+        } catch (e) {}
+      }, 80);
+    }
+  } catch (err) {
+    console.error("Failed to play notification sound:", err);
+  }
+}
+
 function addNotification(message, type) {
   const notification = { id: Date.now(), message, type, read: false, time: new Date() };
   state.notifications.unshift(notification);
   renderNotifications();
   showToast(message);
+  playNotificationSound();
 }
 
 function renderNotifications() {
@@ -1864,13 +2353,33 @@ elements.chatHistory.addEventListener('click', (e) => {
   const index = msgContainer?.getAttribute('data-index');
 
   if (btn.classList.contains('copy-btn')) {
-    const text = msgContainer.querySelector('.message-text').innerText;
-    navigator.clipboard.writeText(text).then(() => showToast('Copied to clipboard!'));
+    const text = msgContainer.markdownText || msgContainer.querySelector('.message-text').innerText;
+    navigator.clipboard.writeText(text).then(() => {
+      showToast('Copied to clipboard!');
+      btn.classList.add('copied');
+      btn.setAttribute('data-tooltip', 'Copied!');
+      const originalSvg = btn.innerHTML;
+      btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+      setTimeout(() => {
+        btn.classList.remove('copied');
+        btn.setAttribute('data-tooltip', 'Copy message');
+        btn.innerHTML = originalSvg;
+      }, 2000);
+    });
   }
 
   if (btn.classList.contains('copy-code-btn')) {
     const code = btn.getAttribute('data-code');
-    navigator.clipboard.writeText(code).then(() => showToast('Code copied!'));
+    navigator.clipboard.writeText(code).then(() => {
+      showToast('Code copied!');
+      const originalText = btn.innerText;
+      btn.innerText = 'Copied!';
+      btn.classList.add('copied');
+      setTimeout(() => {
+        btn.innerText = originalText;
+        btn.classList.remove('copied');
+      }, 2000);
+    });
   }
 
   if (btn.classList.contains('edit-btn-trigger')) {
@@ -2242,6 +2751,12 @@ elements.settingsBtn.addEventListener('click', () => {
   if (elements.themeBgColorInput) {
     elements.themeBgColorInput.value = state.userThemeBgColor;
   }
+  if (elements.soundEnabledInput) elements.soundEnabledInput.checked = state.soundEnabled !== undefined ? state.soundEnabled : true;
+  if (elements.soundTypeSelect) elements.soundTypeSelect.value = state.soundType || 'chime';
+  if (elements.soundTypeGroup) {
+    elements.soundTypeGroup.style.opacity = (state.soundEnabled !== undefined ? state.soundEnabled : true) ? '1' : '0.5';
+    elements.soundTypeGroup.style.pointerEvents = (state.soundEnabled !== undefined ? state.soundEnabled : true) ? 'auto' : 'none';
+  }
   elements.settingsOverlay.classList.remove('hidden');
 });
 
@@ -2251,6 +2766,22 @@ elements.closeSettingsBtn.addEventListener('click', closeAndRevertSettings);
 elements.themeSelect.addEventListener('change', (e) => applyTheme(e.target.value, elements.themeBgColorInput.value));
 elements.themeBgColorInput.addEventListener('input', (e) => applyTheme(elements.themeSelect.value, e.target.value));
 elements.themeColorInput.addEventListener('input', (e) => applyThemeColor(e.target.value));
+
+if (elements.soundEnabledInput) {
+  elements.soundEnabledInput.addEventListener('change', (e) => {
+    const isEnabled = e.target.checked;
+    if (elements.soundTypeGroup) {
+      elements.soundTypeGroup.style.opacity = isEnabled ? '1' : '0.5';
+      elements.soundTypeGroup.style.pointerEvents = isEnabled ? 'auto' : 'none';
+    }
+  });
+}
+
+if (elements.soundTypeSelect) {
+  elements.soundTypeSelect.addEventListener('change', (e) => {
+    playNotificationSound(e.target.value);
+  });
+}
 
 elements.saveSettingsBtn.addEventListener('click', () => {
   saveSettings(
@@ -2264,7 +2795,9 @@ elements.saveSettingsBtn.addEventListener('click', () => {
     elements.gcloudProjectIdInput.value,
     elements.ttsModelSelect.value,
     elements.ollamaUrlInput.value,
-    elements.ollamaModelInput.value
+    elements.ollamaModelInput.value,
+    elements.soundEnabledInput.checked,
+    elements.soundTypeSelect.value
   );
   applyTheme(state.userTheme, state.userThemeBgColor);
   applyThemeColor(state.userThemeColor);

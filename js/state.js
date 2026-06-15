@@ -20,6 +20,8 @@ export const state = {
   userTheme: 'light',
   userThemeColor: '#2563eb',
   userThemeBgColor: '#fcfcfd',
+  soundEnabled: true,
+  soundType: 'chime',
   tasks: [],
   notifications: [],
   usage: {
@@ -39,7 +41,7 @@ export function saveTabsToStorage() {
 
 /** Loads all settings and history from local storage. */
 export function loadSettings(callback) {
-  chrome.storage.local.get(['geminiApiKey', 'ollamaUrl', 'ollamaModel', 'gcloudApiKey', 'gcloudRegion', 'gcloudProjectId', 'ttsModel', 'geminiModel', 'userTheme', 'userThemeColor', 'userThemeBgColor', 'chatTabsData', 'activeTabId', 'persistentUsage'], (result) => {
+  chrome.storage.local.get(['geminiApiKey', 'ollamaUrl', 'ollamaModel', 'gcloudApiKey', 'gcloudRegion', 'gcloudProjectId', 'ttsModel', 'geminiModel', 'userTheme', 'userThemeColor', 'userThemeBgColor', 'soundEnabled', 'soundType', 'chatTabsData', 'activeTabId', 'persistentUsage'], (result) => {
     state.userApiKey = result.geminiApiKey || '';
     state.ollamaUrl = result.ollamaUrl || 'http://localhost:11434';
     state.ollamaModel = result.ollamaModel || 'gemma4:latest';
@@ -51,6 +53,8 @@ export function loadSettings(callback) {
     state.userTheme = result.userTheme || 'light';
     state.userThemeColor = result.userThemeColor || '#2563eb';
     state.userThemeBgColor = result.userThemeBgColor || '#fcfcfd';
+    state.soundEnabled = result.soundEnabled !== undefined ? result.soundEnabled : true;
+    state.soundType = result.soundType || 'chime';
     if (result.persistentUsage) state.usage = result.persistentUsage;
 
     console.log("Settings loaded:", {
@@ -80,7 +84,7 @@ export function loadSettings(callback) {
 }
 
 /** Updates local state and persists settings to local storage. */
-export function saveSettings(apiKey, model, theme, themeColor, themeBgColor, gcloudApiKey, gcloudRegion, gcloudProjectId, ttsModel, ollamaUrl, ollamaModel) {
+export function saveSettings(apiKey, model, theme, themeColor, themeBgColor, gcloudApiKey, gcloudRegion, gcloudProjectId, ttsModel, ollamaUrl, ollamaModel, soundEnabled, soundType) {
   console.log("Saving settings with GCloud Key length:", (gcloudApiKey || "").length);
   state.userApiKey = apiKey || '';
   state.ollamaUrl = ollamaUrl || 'http://localhost:11434';
@@ -93,6 +97,8 @@ export function saveSettings(apiKey, model, theme, themeColor, themeBgColor, gcl
   state.userTheme = theme || 'light';
   if (themeColor) state.userThemeColor = themeColor;
   if (themeBgColor) state.userThemeBgColor = themeBgColor;
+  state.soundEnabled = soundEnabled !== undefined ? soundEnabled : true;
+  state.soundType = soundType || 'chime';
 
   chrome.storage.local.set({
     geminiApiKey: apiKey,
@@ -105,7 +111,9 @@ export function saveSettings(apiKey, model, theme, themeColor, themeBgColor, gcl
     geminiModel: model,
     userTheme: theme,
     userThemeColor: state.userThemeColor,
-    userThemeBgColor: state.userThemeBgColor
+    userThemeBgColor: state.userThemeBgColor,
+    soundEnabled: state.soundEnabled,
+    soundType: state.soundType
   });
 }
 

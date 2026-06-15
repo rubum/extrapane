@@ -30,8 +30,8 @@
         </div>
       </div>
       <div class="header-actions">
-        <div id="headerUsage" class="header-usage" title="Cumulative token usage">0.0k Tokens</div>
-        <button id="clearBtn" class="icon-btn" title="Clear Conversation">
+        <div id="headerUsage" class="header-usage" data-tooltip="Cumulative token usage" data-tooltip-position="bottom">0.0k Tokens</div>
+        <button id="clearBtn" class="icon-btn" data-tooltip="Clear Conversation" data-tooltip-position="bottom">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
             stroke-linecap="round" stroke-linejoin="round">
             <path d="M3 6h18"></path>
@@ -39,7 +39,7 @@
             <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
           </svg>
         </button>
-        <button id="notificationBtn" class="icon-btn" title="Notifications">
+        <button id="notificationBtn" class="icon-btn" data-tooltip="Notifications" data-tooltip-position="bottom">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
             stroke-linecap="round" stroke-linejoin="round">
             <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
@@ -47,7 +47,7 @@
           </svg>
           <span id="notificationBadge" class="notification-badge hidden"></span>
         </button>
-        <button id="openLibraryBtn" class="icon-btn" title="Media Library">
+        <button id="openLibraryBtn" class="icon-btn" data-tooltip="Media Library" data-tooltip-position="bottom">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
             stroke-linecap="round" stroke-linejoin="round">
             <rect x="3" y="3" width="7" height="7"></rect>
@@ -56,7 +56,7 @@
             <rect x="3" y="14" width="7" height="7"></rect>
           </svg>
         </button>
-        <button id="settingsBtn" class="icon-btn" title="Settings">
+        <button id="settingsBtn" class="icon-btn" data-tooltip="Settings" data-tooltip-position="bottom">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
             stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="3"></circle>
@@ -72,7 +72,7 @@
       <div class="tabs-list" id="tabsList">
         <!-- Tabs will be rendered here -->
       </div>
-      <button id="newTabBtn" class="new-tab-btn" title="New Conversation">
+      <button id="newTabBtn" class="new-tab-btn" data-tooltip="New Conversation" data-tooltip-position="bottom">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
           stroke-linecap="round" stroke-linejoin="round">
           <line x1="12" y1="5" x2="12" y2="19"></line>
@@ -91,7 +91,7 @@
       </div>
       <div class="input-area">
         <div class="input-toolbar">
-          <button id="extractBtn" class="action-btn" title="Extract DOM Element">
+          <button id="extractBtn" class="action-btn" data-tooltip="Extract DOM Element">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
               stroke-linecap="round" stroke-linejoin="round">
               <polyline points="21 16 16 21 11 16"></polyline>
@@ -99,7 +99,7 @@
               <path d="M12 4H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h4"></path>
             </svg>
           </button>
-          <button id="extractPdfBtn" class="action-btn" title="Extract Page/Current PDF">
+          <button id="extractPdfBtn" class="action-btn" data-tooltip="Extract Page/Current PDF">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
               stroke-linecap="round" stroke-linejoin="round">
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
@@ -109,7 +109,7 @@
               <polyline points="10 9 9 9 8 9"></polyline>
             </svg>
           </button>
-          <button id="screenshotBtn" class="action-btn" title="Clip Region to Context">
+          <button id="screenshotBtn" class="action-btn" data-tooltip="Clip Region to Context">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
               stroke-linecap="round" stroke-linejoin="round">
               <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
@@ -117,7 +117,7 @@
               <path d="M3 9h18"></path>
             </svg>
           </button>
-          <button id="webcamBtn" class="action-btn" title="Analyze Webcam (Live)">
+          <button id="webcamBtn" class="action-btn" data-tooltip="Analyze Webcam (Live)">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
               stroke-linecap="round" stroke-linejoin="round">
               <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
@@ -125,7 +125,7 @@
             </svg>
           </button>
           <input type="file" id="fileInput" multiple hidden />
-          <button id="uploadBtn" class="action-btn" title="Upload File (Images, PDF, Text, Video)">
+          <button id="uploadBtn" class="action-btn" data-tooltip="Upload File (Images, PDF, Text, Video)" data-tooltip-position="top-left">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
               stroke-linecap="round" stroke-linejoin="round">
               <path
@@ -135,9 +135,9 @@
           </button>
         </div>
         <div class="input-main">
-          <textarea id="chatInput" placeholder="Ask anything about the page..." rows="1"></textarea>
+          <textarea id="chatInput" placeholder="Ask a question, extract elements, or use @ to link media..." rows="1"></textarea>
           <div class="action-btns">
-            <button id="sendBtn" class="action-btn primary" title="Send Message">
+            <button id="sendBtn" class="action-btn primary" data-tooltip="Send Message" data-tooltip-position="top-left">
               <svg class="send-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                 stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="22" y1="2" x2="11" y2="13"></line>
@@ -287,6 +287,36 @@
             <summary>
               <div class="section-header">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M11 5L6 9H2v6h4l5 4V5z"></path>
+                  <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                </svg>
+                <span>Sound Notifications</span>
+              </div>
+            </summary>
+            <div class="section-content">
+              <div class="form-group" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;">
+                <label for="soundEnabledInput" style="margin-bottom: 0; cursor: pointer;">Enable Sound Notifications</label>
+                <div class="toggle-switch">
+                  <input type="checkbox" id="soundEnabledInput" checked />
+                  <span class="slider"></span>
+                </div>
+              </div>
+              <div class="form-group" id="soundTypeGroup" style="transition: opacity 0.3s;">
+                <label for="soundTypeSelect">Notification Sound Type</label>
+                <select id="soundTypeSelect">
+                  <option value="chime">Chime (Default)</option>
+                  <option value="beep">Beep</option>
+                  <option value="two-tone">Two-Tone</option>
+                  <option value="bounce">Bounce</option>
+                </select>
+              </div>
+            </div>
+          </details>
+
+          <details class="settings-section">
+            <summary>
+              <div class="section-header">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <circle cx="12" cy="12" r="10"></circle>
                   <path d="M12 8v8"></path>
                   <path d="M8 12h8"></path>
@@ -385,7 +415,7 @@
       <div class="modal-header">
         <h3>Live Webcam Analysis</h3>
         <div class="modal-header-actions">
-          <button id="mirrorWebcamBtn" class="icon-btn" title="Mirror View">
+          <button id="mirrorWebcamBtn" class="icon-btn" data-tooltip="Mirror View">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
               stroke-linecap="round" stroke-linejoin="round">
               <path d="M15 8l-4 4 4 4"></path>
@@ -393,7 +423,7 @@
               <path d="M12 3v18"></path>
             </svg>
           </button>
-          <button id="closeWebcamBtn" class="icon-btn" title="Close">
+          <button id="closeWebcamBtn" class="icon-btn" data-tooltip="Close">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
               stroke-linecap="round" stroke-linejoin="round">
               <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -440,7 +470,7 @@
             </div>
           </div>
           <div class="control-row">
-            <button id="analysisPlayPauseBtn" class="studio-btn control-btn" title="Play/Pause">
+            <button id="analysisPlayPauseBtn" class="studio-btn control-btn" data-tooltip="Play/Pause">
               <svg class="play-icon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M5 3l14 9-14 9V3z"></path>
               </svg>
@@ -449,7 +479,7 @@
                 <rect x="14" y="4" width="4" height="16"></rect>
               </svg>
             </button>
-            <button id="analysisMuteBtn" class="studio-btn control-btn" title="Mute/Unmute">
+            <button id="analysisMuteBtn" class="studio-btn control-btn" data-tooltip="Mute/Unmute">
               <svg class="volume-up-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                 stroke-width="2.5">
                 <path d="M11 5L6 9H2v6h4l5 4V5z"></path>
@@ -605,7 +635,7 @@
               </svg>
               <input type="text" id="librarySearch" placeholder="Filter assets..." />
             </div>
-            <button id="clearLibraryBtn" class="btn-icon-text danger" title="Clear Library">
+            <button id="clearLibraryBtn" class="btn-icon-text danger" data-tooltip="Clear Library" data-tooltip-position="top-left">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M3 6h18"></path>
                 <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
@@ -621,6 +651,7 @@
     </div>
   </div>
 
+  <script src="lib/jszip.min.js"></script>
   <script src="lib/marked.min.js"></script>
   <script type="module" src="js/main.js"></script>
 </body>

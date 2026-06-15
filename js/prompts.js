@@ -18,6 +18,7 @@ CORE COMMUNICATION RULES:
 7. **Double Newlines**: Use \\n\\n between all distinct sections/paragraphs for readability.
 8. **Smart Summaries**: When asked to summarize, focus on core insights using a natural conversational flow. 
 9. **Transcription Handling**: When providing deep video or audio transcriptions, ALWAYS wrap the transcription text in a code block with language 'extrapane-transcription'.
+10. **Multimodal Context**: When the user links or mentions media using '@', the system resolves and attaches the media (YouTube videos, images, audio, video, PDFs) directly to your request. You should analyze this content and fulfill the user's instructions regarding it.
 `;
 
 export const CHART_INSTRUCTIONS = `
