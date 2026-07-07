@@ -372,7 +372,7 @@ function parseGitHubUrl(text) {
 /**
  * Streams the AI response from the selected LLM provider and updates history and token usage.
  */
-async function streamAIResponse(promptParts, currentTab, systemInstruction) {
+async function streamAIResponse(promptParts, currentTab, systemInstruction, userQuery) {
   let streaming;
   try {
     const provider = getAIProvider(state.userModel);
@@ -449,7 +449,13 @@ async function streamAIResponse(promptParts, currentTab, systemInstruction) {
     compactHistory(currentTab.id);
 
     // Add query complete notification
-    addNotification("Query complete", "success");
+    let notificationMsg = "Query complete";
+    if (userQuery) {
+      const cleanQuery = userQuery.replace(/\s+/g, ' ').trim();
+      const truncatedQuery = cleanQuery.length > 40 ? cleanQuery.substring(0, 40) + "..." : cleanQuery;
+      notificationMsg = `Query complete: "${truncatedQuery}"`;
+    }
+    addNotification(notificationMsg, "success");
 
     // Autoplay if the message contains a TTS player
     const lastMessage = elements.chatHistory.lastElementChild;
@@ -583,7 +589,7 @@ async function sendMessage(text) {
           promptParts.push({ text: repoContext });
 
           const systemInstruction = getSystemInstructions();
-          await streamAIResponse(promptParts, currentTab, systemInstruction);
+          await streamAIResponse(promptParts, currentTab, systemInstruction, text);
         });
 
       } catch (err) {
@@ -666,7 +672,7 @@ async function sendMessage(text) {
   elements.chatInput.value = '';
   elements.chatInput.style.height = 'auto';
 
-  await streamAIResponse(promptParts, currentTab, systemInstruction);
+  await streamAIResponse(promptParts, currentTab, systemInstruction, text);
 }
 
 /**
