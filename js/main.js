@@ -1388,6 +1388,29 @@ window.addEventListener('dragover', (e) => {
   e.preventDefault();
 });
 
+// Transforms common cloud viewer URLs into direct download links
+function transformCloudUrl(urlStr) {
+  try {
+    const u = new URL(urlStr);
+    if (u.hostname.includes('dropbox.com')) {
+      u.searchParams.set('dl', '1');
+      return u.toString();
+    }
+    if (u.hostname.includes('drive.google.com')) {
+      const match = u.pathname.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+      if (match && match[1]) {
+        return `https://drive.google.com/uc?export=download&id=${match[1]}`;
+      }
+    }
+    if (u.hostname === 'github.com' && u.pathname.includes('/blob/')) {
+      u.hostname = 'raw.githubusercontent.com';
+      u.pathname = u.pathname.replace('/blob/', '/');
+      return u.toString();
+    }
+  } catch (e) {}
+  return urlStr;
+}
+
 window.addEventListener('drop', async (e) => {
   e.preventDefault();
   dragCounter = 0;
@@ -1398,6 +1421,67 @@ window.addEventListener('drop', async (e) => {
   if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
     const files = Array.from(e.dataTransfer.files);
     await handleFiles(files);
+  } else {
+    // Try to extract a URL from the dropped data
+    const uriList = e.dataTransfer.getData('text/uri-list');
+    const plainText = e.dataTransfer.getData('text/plain');
+    
+    let urlToFetch = null;
+    if (uriList) {
+      const uris = uriList.split('\n').map(s => s.trim()).filter(s => s && !s.startsWith('#'));
+      if (uris.length > 0) urlToFetch = uris[0];
+    }
+    
+    if (!urlToFetch && plainText && /^https?:\/\//i.test(plainText.trim())) {
+      urlToFetch = plainText.trim();
+    }
+    
+    if (urlToFetch) {
+      try {
+        setExtractionLoading(true);
+        const finalUrl = transformCloudUrl(urlToFetch);
+        const response = await fetch(finalUrl);
+        if (!response.ok) throw new Error(`HTTP ${response.status} - ${response.statusText}`);
+        
+        const contentType = response.headers.get('content-type') || '';
+        if (contentType.includes('text/html') || 
+            contentType.includes('application/javascript') || 
+            contentType.includes('text/javascript') ||
+            contentType.includes('text/css')) {
+            showToast("Dropped link is a webpage or web asset, not a supported file.");
+            return;
+        }
+        
+        const blob = await response.blob();
+        
+        // Derive a filename from the URL
+        let filename = 'downloaded_file';
+        try {
+            const urlObj = new URL(urlToFetch);
+            const pathParts = urlObj.pathname.split('/').filter(Boolean);
+            if (pathParts.length > 0) {
+                filename = pathParts[pathParts.length - 1];
+            }
+        } catch (err) {}
+        
+        // Add an extension if missing
+        if (!filename.includes('.')) {
+             const ext = blob.type.split('/')[1];
+             if (ext && ext !== 'octet-stream') {
+                 const cleanExt = ext.split(';')[0].trim();
+                 filename += `.${cleanExt}`;
+             }
+        }
+        
+        const file = new File([blob], filename, { type: blob.type });
+        await handleFiles([file]);
+      } catch (error) {
+        console.error("Failed to download dropped link:", error);
+        showToast(`Failed to download link: ${error.message}`);
+      } finally {
+        setExtractionLoading(false);
+      }
+    }
   }
 });
 
@@ -1430,26 +1514,31 @@ async function handleFiles(files) {
   setExtractionLoading(true);
   try {
     for (const file of files) {
-      if (file.type.startsWith('video/')) {
-        setExtractionLoading(false);
-        VideoAnalysisModal.show(file);
-        const options = await VideoAnalysisModal.getOptions();
+      try {
+        if (file.type.startsWith('video/')) {
+          setExtractionLoading(false);
+          VideoAnalysisModal.show(file);
+          const options = await VideoAnalysisModal.getOptions();
 
-        if (options.action === 'analyze') {
-          startVideoAnalysis(file, { resolution: options.resolution, fps: options.fps }, options.promptText);
-        }
-        continue;
-      } else if (file.type.startsWith('audio/')) {
-        setExtractionLoading(false);
-        AudioAnalysisModal.show(file);
-        const options = await AudioAnalysisModal.getOptions();
+          if (options.action === 'analyze') {
+            startVideoAnalysis(file, { resolution: options.resolution, fps: options.fps }, options.promptText);
+          }
+          continue;
+        } else if (file.type.startsWith('audio/')) {
+          setExtractionLoading(false);
+          AudioAnalysisModal.show(file);
+          const options = await AudioAnalysisModal.getOptions();
 
-        if (options.action === 'analyze') {
-          startAudioAnalysis(file, options.promptText);
+          if (options.action === 'analyze') {
+            startAudioAnalysis(file, options.promptText);
+          }
+          continue;
+        } else {
+          await processFile(file);
         }
-        continue;
-      } else {
-        await processFile(file);
+      } catch (err) {
+        console.error("Error processing file:", err);
+        showToast(`Error processing ${file.name}: ${err.message}`);
       }
     }
   } finally {
@@ -1866,21 +1955,21 @@ async function processFile(file) {
     size: file.size
   };
 
-  if (file.type.startsWith('image/')) {
+  if (file.type.startsWith('image/') || file.name.match(/\.(png|jpe?g|gif|webp)$/i)) {
     const base64Data = await fileToBase64(file);
     const processed = await resizeImage(base64Data);
     data.base64Images = [{
       base64: processed.base64,
-      mimeType: processed.mimeType,
+      mimeType: processed.mimeType || 'image/jpeg',
       alt: file.name
     }];
-  } else if (file.type === 'application/pdf') {
+  } else if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
     const base64Data = await fileToBase64(file);
     data.base64File = {
       base64: base64Data.split(',')[1],
-      mimeType: file.type
+      mimeType: 'application/pdf'
     };
-  } else if (file.type.startsWith('text/') || file.name.endsWith('.md') || file.name.endsWith('.js') || file.name.endsWith('.css') || file.name.endsWith('.html')) {
+  } else if (file.type.startsWith('text/') || file.name.match(/\.(md|js|css|html|csv|txt|json)$/i)) {
     const text = await file.text();
     data.text = text;
   } else {
