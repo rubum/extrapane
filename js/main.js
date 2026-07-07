@@ -1365,6 +1365,42 @@ elements.webcamBtn.addEventListener('click', () => WebcamModal.open());
 elements.uploadBtn.addEventListener('click', () => elements.fileInput.click());
 elements.fileInput.addEventListener('change', handleFileSelect);
 
+// Drag and Drop Event Listeners
+let dragCounter = 0;
+
+window.addEventListener('dragenter', (e) => {
+  e.preventDefault();
+  dragCounter++;
+  if (dragCounter === 1 && elements.dropZone) {
+    elements.dropZone.classList.remove('hidden');
+  }
+});
+
+window.addEventListener('dragleave', (e) => {
+  e.preventDefault();
+  dragCounter--;
+  if (dragCounter === 0 && elements.dropZone) {
+    elements.dropZone.classList.add('hidden');
+  }
+});
+
+window.addEventListener('dragover', (e) => {
+  e.preventDefault();
+});
+
+window.addEventListener('drop', async (e) => {
+  e.preventDefault();
+  dragCounter = 0;
+  if (elements.dropZone) {
+    elements.dropZone.classList.add('hidden');
+  }
+  
+  if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+    const files = Array.from(e.dataTransfer.files);
+    await handleFiles(files);
+  }
+});
+
 // Webcam Modal Listeners
 elements.closeWebcamBtn.addEventListener('click', () => WebcamModal.close());
 elements.startRecordingBtn.addEventListener('click', () => WebcamModal.toggleRecording());
@@ -1386,11 +1422,9 @@ document.querySelectorAll('.lib-tab').forEach(btn => {
 // Settings Save Logic removed (using main save listener at bottom of file)
 
 /**
- * Enhanced file selector to handle Video optimization and 
- * Background analysis triggers.
+ * Processes a list of files (from file input or drag-and-drop).
  */
-async function handleFileSelect(e) {
-  const files = Array.from(e.target.files);
+async function handleFiles(files) {
   if (files.length === 0) return;
 
   setExtractionLoading(true);
@@ -1420,6 +1454,18 @@ async function handleFileSelect(e) {
     }
   } finally {
     setExtractionLoading(false);
+  }
+}
+
+/**
+ * Enhanced file selector to handle Video optimization and 
+ * Background analysis triggers.
+ */
+async function handleFileSelect(e) {
+  const files = Array.from(e.target.files);
+  try {
+    await handleFiles(files);
+  } finally {
     elements.fileInput.value = ''; // Reset for same-file re-uploads
   }
 }

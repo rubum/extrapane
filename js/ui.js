@@ -40,6 +40,7 @@ export const elements = {
   newTabBtn: document.getElementById('newTabBtn'),
   fileInput: document.getElementById('fileInput'),
   uploadBtn: document.getElementById('uploadBtn'),
+  dropZone: document.getElementById('dropZone'),
   canvasContainer: document.getElementById('canvasContainer'),
   canvasFrame: document.getElementById('canvasFrame'),
   closeCanvasBtn: document.getElementById('closeCanvasBtn'),
