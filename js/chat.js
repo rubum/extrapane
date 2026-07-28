@@ -4,7 +4,7 @@
  * and dynamic charts.
  */
 
-import { elements, escapeHtml, smartScroll } from './ui.js';
+import { elements, escapeHtml, smartScroll, showToast } from './ui.js';
 import { state, saveTabsToStorage } from './state.js';
 import { getAIProvider } from './api.js';
 
@@ -1101,7 +1101,7 @@ function showInlineInput(block, messageIndex, blockIndex) {
 export function renderSubConversationBox(blockEl, messageIndex, blockIndex, question, answer, collapsed) {
   let subConvContainer = blockEl.nextElementSibling;
   if (subConvContainer && subConvContainer.classList.contains('sub-conv-container')) {
-    subConvContainer.remove();
+      subConvContainer.remove();
   }
 
   subConvContainer = document.createElement('div');
@@ -1115,6 +1115,7 @@ export function renderSubConversationBox(blockEl, messageIndex, blockIndex, ques
         Sub-discussion
       </span>
       <div style="display: flex; gap: 6px; align-items: center;">
+        <button class="sub-conv-action-btn promote">Move to Chat</button>
         <button class="sub-conv-action-btn toggle">${collapsed ? 'Expand' : 'Collapse'}</button>
         <button class="sub-conv-action-btn delete">Delete</button>
       </div>
@@ -1126,6 +1127,35 @@ export function renderSubConversationBox(blockEl, messageIndex, blockIndex, ques
   `;
 
   blockEl.parentNode.insertBefore(subConvContainer, blockEl.nextSibling);
+
+  subConvContainer.querySelector('.sub-conv-action-btn.promote').onclick = () => {
+    // 1. Copy the question to the main chat input
+    if (elements.chatInput) {
+      elements.chatInput.value = question;
+      elements.chatInput.dispatchEvent(new Event('input'));
+    }
+
+    // 2. Open input wrapper and hide launcher
+    if (elements.inputWrapper) {
+      elements.inputWrapper.classList.remove('hidden');
+    }
+    if (elements.chatLauncherBtn) {
+      elements.chatLauncherBtn.classList.add('hidden');
+    }
+    if (elements.chatInput) {
+      elements.chatInput.focus();
+    }
+
+    // 3. Remove sub-discussion from DOM and state
+    subConvContainer.remove();
+    const currentTab = state.tabs.find(t => t.id === state.activeTabId);
+    const msg = currentTab?.history[messageIndex];
+    if (msg && msg.subConversations) {
+      msg.subConversations = msg.subConversations.filter(s => s.blockIndex !== blockIndex);
+      saveTabsToStorage();
+      showToast("Sub-discussion moved to main input.");
+    }
+  };
 
   subConvContainer.querySelector('.sub-conv-action-btn.toggle').onclick = () => {
     const isCollapsed = subConvContainer.classList.toggle('collapsed');

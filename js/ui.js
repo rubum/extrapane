@@ -15,6 +15,8 @@ export const elements = {
   contextContainer: document.getElementById('contextContainer'),
   extractionLoader: document.getElementById('extraction-loader'),
   inputWrapper: document.querySelector('.input-area-wrapper'),
+  chatLauncherBtn: document.getElementById('chatLauncherBtn'),
+  closeInputBtn: document.getElementById('closeInputBtn'),
   settingsBtn: document.getElementById('settingsBtn'),
   clearBtn: document.getElementById('clearBtn'),
   settingsOverlay: document.getElementById('settingsOverlay'),

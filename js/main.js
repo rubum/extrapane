@@ -89,6 +89,27 @@ window.addEventListener('media-updated', () => {
   MediaLibraryModal.refresh();
 });
 
+function showInputArea() {
+  if (elements.inputWrapper) {
+    elements.inputWrapper.classList.remove('hidden');
+  }
+  if (elements.chatLauncherBtn) {
+    elements.chatLauncherBtn.classList.add('hidden');
+  }
+  if (elements.chatInput) {
+    elements.chatInput.focus();
+  }
+}
+
+function hideInputArea() {
+  if (elements.inputWrapper) {
+    elements.inputWrapper.classList.add('hidden');
+  }
+  if (elements.chatLauncherBtn) {
+    elements.chatLauncherBtn.classList.remove('hidden');
+  }
+}
+
 // --- Tab Helpers ---
 
 function getActiveTab() {
@@ -506,6 +527,7 @@ async function sendMessage(text) {
 
     elements.chatInput.value = '';
     elements.chatInput.style.height = 'auto';
+    hideInputArea();
 
     // 2. Append selector card placeholder
     const aiIndex = currentTab.history.length;
@@ -671,6 +693,7 @@ async function sendMessage(text) {
 
   elements.chatInput.value = '';
   elements.chatInput.style.height = 'auto';
+  hideInputArea();
 
   await streamAIResponse(promptParts, currentTab, systemInstruction, text);
 }
@@ -829,8 +852,11 @@ function reconstructChatFromHistory() {
   const currentTab = getActiveTab();
   if (currentTab.history.length === 0) {
     showWelcomeMessage();
+    showInputArea();
     return;
   }
+
+  hideInputArea();
 
   currentTab.history.forEach((msg, index) => {
     if (msg.type === 'task') {
@@ -1354,8 +1380,17 @@ elements.chatInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
     sendMessage(elements.chatInput.value);
+  } else if (e.key === 'Escape') {
+    hideInputArea();
   }
 });
+
+if (elements.chatLauncherBtn) {
+  elements.chatLauncherBtn.addEventListener('click', showInputArea);
+}
+if (elements.closeInputBtn) {
+  elements.closeInputBtn.addEventListener('click', hideInputArea);
+}
 
 elements.newTabBtn.addEventListener('click', createTab);
 elements.extractBtn.addEventListener('click', toggleExtraction);
@@ -2534,6 +2569,7 @@ elements.chatHistory.addEventListener('click', (e) => {
 
       content.style.display = 'none';
       msgContainer.querySelector('.message-actions').style.display = 'none';
+      msgContainer.classList.add('editing');
       editArea.innerHTML = `
         <textarea class="edit-textarea">${question}</textarea>
         <div class="edit-buttons">
@@ -2541,6 +2577,28 @@ elements.chatHistory.addEventListener('click', (e) => {
           <button class="cancel-edit-btn">Cancel</button>
         </div>
       `;
+
+      const textarea = editArea.querySelector('.edit-textarea');
+      if (textarea) {
+        // Function to adjust height with max limit
+        const adjustHeight = () => {
+          textarea.style.height = 'auto';
+          // Add 6px offset to account for borders and padding breathing room
+          const newHeight = Math.min(textarea.scrollHeight + 6, 200);
+          textarea.style.height = newHeight + 'px';
+          textarea.style.overflowY = textarea.scrollHeight > 200 ? 'auto' : 'hidden';
+        };
+
+        // Auto-resize initially - defer slightly to allow the browser to complete layout reflow
+        setTimeout(adjustHeight, 20);
+
+        // Auto-resize on input
+        textarea.addEventListener('input', adjustHeight);
+
+        // Focus and place cursor at end
+        textarea.focus();
+        textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+      }
     }
   }
 
@@ -2963,6 +3021,7 @@ elements.clearBtn.addEventListener('click', () => {
     renderTabs();
     elements.chatHistory.innerHTML = '';
     showWelcomeMessage();
+    showInputArea();
   }
 });
 
